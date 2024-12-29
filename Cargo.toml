@@ -1,0 +1,42 @@
+[package]
+name = "installer"
+version = "0.1.0"
+authors = ["DogeThis <thedogethis@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus = { version = "0.6.1" }
+dioxus-sdk = { version = "0.6.0", features=["storage"]}
+dirs = "5.0.1"
+reqwest = { version = "0.12.9" }
+tokio = "1.42.0"
+zip = "2.2.2"
+
+[features]
+default = ["desktop"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+
+[profile]
+
+[profile.release]
+opt-level = 0
+debug = 1
+lto = false
+codegen-units = 256
+panic = "abort"
+strip = false
+incremental = true
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"

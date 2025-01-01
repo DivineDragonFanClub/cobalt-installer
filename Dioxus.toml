@@ -6,7 +6,7 @@ default_platform = "desktop"
 
 [bundle]
 identifier = "com.divinedragonfanclub"
-publisher = "DivineDragonFanClub"
+publisher = "Divine Dragon Fan Club"
 icon = ["assets/SAMMIE.png"]
 
 [web.app]

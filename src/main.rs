@@ -1,6 +1,5 @@
 #![windows_subsystem = "windows"]
 
-use core::num;
 use std::path::{Path, PathBuf};
 
 use dioxus::desktop::use_window;
@@ -8,26 +7,25 @@ use dioxus::{logger::tracing, prelude::*};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
+
 use dirs::home_dir;
-use global_attributes::user_select;
 
 use std::process::{Child, Command};
 
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
 use zip::ZipArchive;
-use std::fs::File as SyncFile;
-use std::io::Read;
+use std::io::{Read, Write};
 use dioxus_sdk::storage::*;
-
 
 fn main() {
     dioxus_sdk::storage::set_dir!();
-    dioxus::launch(App);
+    LaunchBuilder::new()
+        .with_cfg(
+            dioxus_desktop::Config::new().with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller"))
+        )
+        .launch(App);
 }
 
 const RELEASE_URL: &str = "https://github.com/Raytwo/Cobalt/releases/latest/download/release.zip";
-const RELEASE_ZIP: &str = "release.zip";
 
 fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     if cfg!(target_os = "macos") {
@@ -68,7 +66,7 @@ async fn delete_bad_subsdk9() {
     if let Some(path) = construct_bad_subsdk9_path() {
         if path.exists() {
             tracing::info!("Deleting bad subsdk9");
-            fs::remove_file(path).await.unwrap();
+            std::fs::remove_file(path).unwrap();
         } else {
             tracing::info!("No bad subsdk9 found");
         }
@@ -77,20 +75,15 @@ async fn delete_bad_subsdk9() {
     }
 }
 
-async fn download_release() -> PathBuf {
-    let bytes = reqwest::get(RELEASE_URL)
+async fn download_release() -> reqwest::Response {
+    reqwest::get(RELEASE_URL)
         .await
         .unwrap()
-        .bytes()
-        .await
-        .unwrap();
-    fs::write(RELEASE_ZIP, &bytes).await.unwrap();
-    PathBuf::from(RELEASE_ZIP)
 }
 
-async fn extract_release(zip_path: PathBuf, dest: PathBuf) {
-    let file = SyncFile::open(zip_path).unwrap();
-    let mut archive = ZipArchive::new(file).unwrap();
+async fn extract_release(zip_archive_bytes: &[u8], dest: PathBuf) {
+    let reader = std::io::Cursor::new(zip_archive_bytes);
+    let mut archive = ZipArchive::new(reader).unwrap();
     
     let files: Vec<String> = archive.file_names().map(String::from).collect();
     for name in files {
@@ -99,7 +92,7 @@ async fn extract_release(zip_path: PathBuf, dest: PathBuf) {
 
         if file.is_dir() {
             tracing::info!("File {} extracted to \"{}\"", name, outpath.display());
-            fs::create_dir_all(&outpath).await.unwrap();
+            std::fs::create_dir_all(&outpath).unwrap();
         } else {
             println!(
                 "File {} extracted to \"{}\" ({} bytes)",
@@ -109,13 +102,13 @@ async fn extract_release(zip_path: PathBuf, dest: PathBuf) {
             );
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
-                    fs::create_dir_all(&p).await.unwrap();
+                    std::fs::create_dir_all(&p).unwrap();
                 }
             }
-            let mut outfile = fs::File::create(&outpath).await.unwrap();
+            let mut outfile = std::fs::File::create(&outpath).unwrap();
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).unwrap();
-            outfile.write_all(&buffer).await.unwrap();
+            outfile.write_all(&buffer).unwrap();
         }
     }
 }
@@ -123,7 +116,7 @@ async fn extract_release(zip_path: PathBuf, dest: PathBuf) {
 async fn create_mods_directory(sdcard_path: PathBuf) {
     let mods_path = sdcard_path.join("engage/mods");
     if !mods_path.exists() {
-        fs::create_dir_all(mods_path).await.unwrap();
+        std::fs::create_dir_all(mods_path).unwrap();
     } else {
         tracing::info!("Mods directory already exists");
     }
@@ -214,12 +207,13 @@ pub fn Hero() -> Element {
         delete_bad_subsdk9().await;
         tracing::info!("Downloading release");
         status_message.set("Downloading release".to_string());
-        let zip_path = download_release().await;
+        let response = download_release().await;
+        let zip_archive_bytes = response.bytes().await.unwrap();
 
         
 
         tracing::info!("Extracting release to {:?}", cobalt_mod_path);
-        extract_release(zip_path, cobalt_mod_path()).await;
+        extract_release(&zip_archive_bytes, cobalt_mod_path()).await;
         create_mods_directory(cobalt_mod_path()).await;
         tracing::info!("Installation complete");
         status_message.set("Installation complete".to_string());

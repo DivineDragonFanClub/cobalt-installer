@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dioxus::desktop::use_window;
+// use dioxus::desktop::use_window;
 use dioxus::{logger::tracing, prelude::*};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -19,9 +19,9 @@ use dioxus_sdk::storage::*;
 fn main() {
     dioxus_sdk::storage::set_dir!();
     LaunchBuilder::new()
-        .with_cfg(
-            dioxus_desktop::Config::new().with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller"))
-        )
+        // .with_cfg(
+        //     dioxus_desktop::Config::new().with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller"))
+        // )
         .launch(App);
 }
 
@@ -124,8 +124,8 @@ async fn create_mods_directory(sdcard_path: PathBuf) {
 
 #[component]
 fn App() -> Element {
-    let window = use_window();
-    window.set_always_on_top(false);
+    // let window = use_window();
+    // window.set_always_on_top(false);
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
@@ -154,7 +154,7 @@ fn does_engage_mods_folder_exist(path: impl AsRef<Path>) -> bool {
 pub fn Hero() -> Element {
     let mut status_message = use_signal(|| "Waiting for you".to_string());
 
-    let mut installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || { "Ryujinx".to_string()});
+    let mut installation_type = use_signal(||  "SD Card".to_string());
 
     let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || { "".to_string()});
 
@@ -253,8 +253,8 @@ pub fn Hero() -> Element {
                         onchange: move |e| {
                             installation_type.set(e.value());
                         },
-                        option { label: "Install for Ryujinx", value: "Ryujinx" }
                         option { label: "Install onto SD card", value: "SD Card" }
+                        option { label: "Install for Ryujinx", value: "Ryujinx" }
                     }  
                 }
                 if installation_type() ==  "SD Card" {
@@ -367,14 +367,17 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                     r#type: "file",
                     // Select a folder by setting the directory attribute
                     directory: true,
-                    onchange: move |evt| {
-                        if let Some(file_engine) = evt.files() {
-                            if let Some(dir) = file_engine.files().iter().next() {
-                                tracing::info!("You chose folder: {}", dir);
-                                selected_sdcard_path.set(dir.to_owned());
-                            }
+                    onchange: move |evt| async {
+                        let window = web_sys::window().expect("window not found");
+                        window.show_directory_picker().unwrap();
+                        // if let Some(file_engine) = evt.files() {
+                        // tracing::info!("cock");
+                        // if let Some(dir) = file_engine.files().iter().next() {
+                        //         tracing::info!("You chose folder: {}", dir);
+                        //         selected_sdcard_path.set(dir.to_owned());
+                        //     }
                             
-                        }
+                        // }
                     },
                     display: "none",
                 }

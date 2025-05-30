@@ -7,6 +7,7 @@ use dioxus::{logger::tracing, prelude::*};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
+const SAMMIE: Asset = asset!("/assets/SAMMIE.png");
 
 use dirs::home_dir;
 
@@ -230,7 +231,7 @@ pub fn Hero() -> Element {
                     }
                     img {
                         id: "sammie",
-                        src: "/assets/SAMMIE.png",
+                        src: SAMMIE,
                         alt: "Sammie stares at you, judgingly",
                         onclick: move |_| {
                             num_clicks.set(num_clicks() + 1);

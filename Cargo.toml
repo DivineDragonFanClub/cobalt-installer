@@ -1,5 +1,5 @@
 [package]
-name = "installer"
+name = "CobaltInstaller"
 version = "0.1.0"
 authors = ["DogeThis <thedogethis@gmail.com>"]
 edition = "2021"

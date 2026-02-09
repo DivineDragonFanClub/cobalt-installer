@@ -17,6 +17,61 @@ use zip::ZipArchive;
 use std::io::{Read, Write};
 use dioxus_sdk::storage::*;
 
+struct Emulator {
+    name: &'static str,
+    linux_data_path: &'static str,
+    macos_data_path: &'static str,
+    windows_data_folder: &'static str,
+    sd_card_folder: &'static str,
+}
+
+impl Emulator {
+    fn data_path(&self) -> Option<PathBuf> {
+        match std::env::consts::OS {
+            "macos" => home_dir().map(|h| h.join(self.macos_data_path)),
+            "windows" => std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join(self.windows_data_folder)),
+            "linux" => home_dir().map(|h| h.join(self.linux_data_path)),
+            other => todo!("Unsupported platform: {other}"),
+        }
+    }
+
+    fn sd_card_path(&self) -> Option<PathBuf> {
+        self.data_path().map(|p| p.join(self.sd_card_folder))
+    }
+
+    fn is_installed(&self) -> bool {
+        self.data_path().map(|p| p.exists()).unwrap_or(false)
+    }
+}
+
+static EMULATORS: &[Emulator] = &[
+    Emulator {
+        name: "Ryujinx",
+        linux_data_path: ".config/Ryujinx",
+        macos_data_path: "Library/Application Support/Ryujinx",
+        windows_data_folder: "Ryujinx",
+        sd_card_folder: "sdcard",
+    },
+    Emulator {
+        name: "Citron",
+        linux_data_path: ".local/share/citron", // I got this from the docs https://citron-emu.org/docs/installation
+        macos_data_path: ".local/share/citron",
+        windows_data_folder: "citron",
+        sd_card_folder: "sdmc",
+    },
+    Emulator {
+        name: "Eden",
+        linux_data_path: ".local/share/eden", // Assuming based on how Eden has the same structure as Citron, it's not mentioned in the docs. 
+        macos_data_path: ".local/share/eden",
+        windows_data_folder: "eden",
+        sd_card_folder: "sdmc",
+    },
+];
+
+fn get_emulator(name: &str) -> Option<&'static Emulator> {
+    EMULATORS.iter().find(|e| e.name == name)
+}
+
 fn main() {
     dioxus_sdk::storage::set_dir!();
     LaunchBuilder::new()
@@ -29,42 +84,23 @@ fn main() {
 const RELEASE_URL: &str = "https://github.com/Raytwo/Cobalt/releases/latest/download/release.zip";
 
 fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
-    if cfg!(target_os = "macos") {
-        Command::new("open").arg(path.as_ref()).spawn()
-    } else if cfg!(target_os = "windows") {
-        Command::new("explorer").arg(path.as_ref()).spawn()
-    } else {
-        Command::new("xdg-open").arg(path.as_ref()).spawn()
-    }
+    let cmd = match std::env::consts::OS {
+        "macos" => "open",
+        "windows" => "explorer",
+        "linux" => "xdg-open",
+        other => todo!("Unsupported platform: {other}"),
+    };
+    Command::new(cmd).arg(path.as_ref()).spawn()
 }
 
-/// Returns the Ryujinx data folder in a platform-agnostic way:
-/// - macOS: ~/Library/Application Support/Ryujinx
-/// - Windows: %APPDATA%/Ryujinx ? unconfirmed
-/// - Linux/Other: ~/.config/Ryujinx ? unconfirmed
-fn ryujinx_data_path() -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        home_dir().map(|h| h.join("Library").join("Application Support").join("Ryujinx"))
-    } else if cfg!(target_os = "windows") {
-        std::env::var_os("APPDATA").map(|appdata| PathBuf::from(appdata).join("Ryujinx"))
-    } else {
-        home_dir().map(|h| h.join(".config").join("Ryujinx"))
-    }
-}
-
-fn is_ryujinx_installed() -> bool {
-    ryujinx_data_path().map(|path| path.exists()).unwrap_or(false)
-}
-
-/// Constructs the path to the `subsdk9` directory inside the mods/contents/... directory.
-fn construct_bad_subsdk9_path() -> Option<PathBuf> {
-    ryujinx_data_path().map(|base| {
+fn construct_bad_subsdk9_path(emulator: &Emulator) -> Option<PathBuf> {
+    emulator.data_path().map(|base| {
         base.join("mods/contents/0100a6301214e000/skyline/exefs/subsdk9")
     })
 }
 
-async fn delete_bad_subsdk9() {
-    if let Some(path) = construct_bad_subsdk9_path() {
+async fn delete_bad_subsdk9(emulator: &Emulator) {
+    if let Some(path) = construct_bad_subsdk9_path(emulator) {
         if path.exists() {
             tracing::info!("Deleting bad subsdk9");
             std::fs::remove_file(path).unwrap();
@@ -72,7 +108,7 @@ async fn delete_bad_subsdk9() {
             tracing::info!("No bad subsdk9 found");
         }
     } else {
-        tracing::error!("Could not find Ryujinx folder");
+        tracing::error!("Could not find {} folder", emulator.name);
     }
 }
 
@@ -135,10 +171,6 @@ fn App() -> Element {
     }
 }
 
-fn get_ryujinx_sd_card_folder() -> Option<PathBuf> {
-    ryujinx_data_path().map(|base| base.join("sdcard"))
-}
-
 fn open_engage_mods_folder(path: impl AsRef<Path>) {
     let mods_path = path.as_ref().join("engage").join("mods");
     open_dir(mods_path)
@@ -168,12 +200,12 @@ pub fn Hero() -> Element {
     });
 
     let is_install_ready = {
-        // if SD card, need a filled in SD card path
-        // else, it's ready
         if installation_type() == "SD Card" {
-            user_selected_sdcard_path().len() > 0
+            !user_selected_sdcard_path().is_empty()
+        } else if let Some(emulator) = get_emulator(&installation_type()) {
+            emulator.is_installed()
         } else {
-            is_ryujinx_installed()
+            false
         }
     };
     
@@ -183,29 +215,23 @@ pub fn Hero() -> Element {
     let mut cobalt_mod_path = use_signal(|| PathBuf::new());
 
     use_effect(move || {
-        let sdcard_path = if installation_type() == String::from("SD Card") {
+        let sdcard_path = if installation_type() == "SD Card" {
             PathBuf::from(user_selected_sdcard_path())
-        } else if installation_type() == String::from("Ryujinx") {
-            get_ryujinx_sd_card_folder().expect("Could not find Ryujinx folder")
+        } else if let Some(emulator) = get_emulator(&installation_type()) {
+            emulator.sd_card_path().expect("Could not find emulator folder")
         } else {
-            panic!("Pick an installation method.");
+            return;
         };
 
         cobalt_mod_path.set(sdcard_path);
     });
 
-    // let sdcard_path = if installation_type() == String::from("SD Card") {
-    //     PathBuf::from(user_selected_sdcard_path())
-    // } else if installation_type() == String::from("Ryujinx") {
-    //     get_sd_card_folder().expect("Could not find Ryujinx folder")
-    // } else {
-    //     panic!("Pick an installation method.");
-    // };
-
     let install_cobalt = move |_| async move {
         tracing::info!("Extracting release to {:?}", cobalt_mod_path);
 
-        delete_bad_subsdk9().await;
+        if let Some(emulator) = get_emulator(&installation_type()) {
+            delete_bad_subsdk9(emulator).await;
+        }
         tracing::info!("Downloading release");
         status_message.set("Downloading release".to_string());
         let response = download_release().await;
@@ -221,67 +247,55 @@ pub fn Hero() -> Element {
     };
 
     rsx! {
-        div {
-            id: "hero",
-            div { 
-                div {
-                    id: "welcome",
-                    h1 {
-                        "Welcome to the Cobalt Installer"
-                    }
+        div { id: "hero",
+            div {
+                div { id: "welcome",
+                    h1 { "Welcome to the Cobalt Installer" }
                     img {
                         id: "sammie",
                         src: SAMMIE,
                         alt: "Sammie stares at you, judgingly",
                         onclick: move |_| {
                             num_clicks.set(num_clicks() + 1);
-                        }
+                        },
                     }
                 }
             }
-            div {
-                id: "main-container",
+            div { id: "main-container",
                 div {
                     id: "installation_type_container",
                     class: "message_zone first",
-                    label { 
-                        for: "installation_type_select",
-                        "How would you like to install Cobalt?",
-                    },
-                    select {  
+                    label { r#for: "installation_type_select", "How would you like to install Cobalt?" }
+                    select {
                         id: "installation_type_select",
                         value: installation_type,
                         onchange: move |e| {
                             installation_type.set(e.value());
                         },
                         option { label: "Install for Ryujinx", value: "Ryujinx" }
+                        option { label: "Install for Citron", value: "Citron" }
+                        option { label: "Install for Eden", value: "Eden" }
                         option { label: "Install onto SD card", value: "SD Card" }
-                    }  
-                }
-                if installation_type() ==  "SD Card" {
-                    SdCardSelector {
-                        selected_sdcard_path: user_selected_sdcard_path
                     }
                 }
-                if installation_type() == "Ryujinx" {
-                   RyujinxMessageZone {  }
+                if installation_type() == "SD Card" {
+                    SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
                 }
-                
+                if get_emulator(&installation_type()).is_some() {
+                    EmulatorMessageZone { emulator_name: installation_type() }
+                }
+
                 div {
-                    id: "action_zone", 
-                    class: {
-                        if is_install_ready {
-                            "message_zone third"
-                        } else {
-                            "message_zone disabled"
-                        }
-                    },
-                    div {
-                        class: "action_zone_buttons",
-                        button { 
+                    id: "action_zone",
+                    class: {if is_install_ready { "message_zone third" } else { "message_zone disabled" }},
+                    div { class: "action_zone_buttons",
+                        button {
                             id: "install_button",
                             class: "primary",
-                            onclick: install_cobalt, disabled: !is_install_ready, "Install Cobalt" }
+                            onclick: install_cobalt,
+                            disabled: !is_install_ready,
+                            "Install Cobalt"
+                        }
                         button {
                             id: "open_mods_folder_button",
                             class: "secondary",
@@ -292,24 +306,18 @@ pub fn Hero() -> Element {
                             "Open Cobalt Mods Folder"
                         }
                     }
-                    code { 
-                        class: "status",
+                    code { class: "status",
                         "Status: "
-                        { status_message.clone() }
+                        {status_message.clone()}
                     }
                 }
-                div {
-                    id: "credits",
+                div { id: "credits",
                     p {
                         "Having issues? "
-                        a {
-                            href: "https://discord.gg/BH6XhKsKdS",
-                            "Get help!"
-                        }
+                        a { href: "https://discord.gg/BH6XhKsKdS", "Get help!" }
                     }
-                    p {
-                        "Sommie icon by badatgames26"
-                    }
+                    p { "Sommie icon by badatgames26" }
+                    p { "Version {env!(\"CARGO_PKG_VERSION\")}" }
                 }
             }
         }
@@ -317,30 +325,21 @@ pub fn Hero() -> Element {
 }
 
 #[component]
-pub fn RyujinxMessageZone() -> Element {
+pub fn EmulatorMessageZone(emulator_name: String) -> Element {
+    let Some(emulator) = get_emulator(&emulator_name) else {
+        return rsx! {};
+    };
+
     rsx! {
-        div
-        {
-            class: "message_zone second",
+        div { class: "message_zone second",
             div {
-                {
-                    if is_ryujinx_installed() {
-                        rsx! {
-                            "Ryujinx autodetected at "
-                            code {
-                                { ryujinx_data_path().unwrap().display().to_string() }
-                            }
-                        }
-                    } else {
-                        rsx! {
-                            div {
-                                "We couldn't find your Ryujinx installation."
-                            }
-                            div { 
-                                "Please use the SD Card installation type instead."
-                            }
-                        }
-                    }
+                if emulator.is_installed() {
+                    {emulator.name}
+                    " autodetected at "
+                    code { {emulator.data_path().unwrap().display().to_string()} }
+                } else {
+                    div { "We couldn't find your {emulator.name} installation." }
+                    div { "Please use the SD Card installation type instead." }
                 }
             }
         }
@@ -350,19 +349,10 @@ pub fn RyujinxMessageZone() -> Element {
 #[component]
 pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
     rsx! {
-        div {
-            id: "sd_select_container",
-            class: "message_zone second",
-            div {
-                "Select your SD Card folder, and we'll install Cobalt there."
-            }
-            div {
-                id: "sd_select_button_container",           
-                label { 
-                    id: "sd_select_label",
-                    for: "sd_select",
-                    "Select SD Card folder"
-                }
+        div { id: "sd_select_container", class: "message_zone second",
+            div { "Select your SD Card folder, and we'll install Cobalt there." }
+            div { id: "sd_select_button_container",
+                label { id: "sd_select_label", r#for: "sd_select", "Select SD Card folder" }
                 input {
                     id: "sd_select",
                     r#type: "file",
@@ -374,7 +364,7 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                                 tracing::info!("You chose folder: {}", dir);
                                 selected_sdcard_path.set(dir.to_owned());
                             }
-                            
+
                         }
                     },
                     display: "none",
@@ -382,9 +372,9 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                 div {
                     code {
                         if selected_sdcard_path().len() == 0 {
-                             { "No folder selected" }
+                            {"No folder selected"}
                         } else {
-                             { selected_sdcard_path }
+                            {selected_sdcard_path}
                         }
                     }
                 }
@@ -394,7 +384,7 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                         onclick: move |_| {
                             selected_sdcard_path.set("".to_string());
                         },
-                        "X",
+                        "X"
                     }
                 }
             }

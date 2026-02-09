@@ -272,9 +272,9 @@ pub fn Hero() -> Element {
                         onchange: move |e| {
                             installation_type.set(e.value());
                         },
-                        option { label: "Install for Ryujinx", value: "Ryujinx" }
-                        option { label: "Install for Citron", value: "Citron" }
-                        option { label: "Install for Eden", value: "Eden" }
+                        for emu in EMULATORS {
+                            option { label: "Install for {emu.name}", value: "{emu.name}" }
+                        }
                         option { label: "Install onto SD card", value: "SD Card" }
                     }
                 }

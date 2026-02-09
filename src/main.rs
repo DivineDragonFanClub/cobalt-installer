@@ -359,12 +359,11 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                     // Select a folder by setting the directory attribute
                     directory: true,
                     onchange: move |evt| {
-                        if let Some(file_engine) = evt.files() {
-                            if let Some(dir) = file_engine.files().iter().next() {
-                                tracing::info!("You chose folder: {}", dir);
-                                selected_sdcard_path.set(dir.to_owned());
-                            }
-
+                        let files = evt.files();
+                        if let Some(file) = files.iter().next() {
+                            let dir = file.name().to_string();
+                            tracing::info!("You chose folder: {}", dir);
+                            selected_sdcard_path.set(dir);
                         }
                     },
                     display: "none",

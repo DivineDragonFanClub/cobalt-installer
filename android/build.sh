@@ -29,7 +29,7 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 echo "==> dx build --release (release Rust + generated gradle project)"
-dx build --release --platform android "$@"
+dx build --release --platform android --target aarch64-linux-android "$@"
 
 GEN=target/dx/CobaltInstaller/release/android/app
 RES=$GEN/app/src/main/res

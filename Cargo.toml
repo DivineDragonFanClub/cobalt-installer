@@ -7,12 +7,29 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.3" }
-dioxus-sdk = { version = "0.7.0", features=["storage"] }
-dioxus-desktop = "0.7.3"
+# keep this matched to the installed dx CLI version, dx warns loudly on a mismatch
+dioxus = { version = "0.7.9" }
 dirs = "5.0.1"
-reqwest = { version = "0.12.9" }
 zip = "2.2.2"
+# rustls instead of the default native-tls so the Android build doesn't have to
+# cross-compile OpenSSL. Desktop is happy with rustls too.
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"] }
+
+# Desktop-only deps. The Android build doesn't pull these in, so nothing here
+# needs to cross-compile for android.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+dioxus-desktop = "0.7.9"
+dioxus-sdk = { version = "0.7.0", features = ["storage"] }
+
+# Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
+# `futures-timer` gives us an await-able delay for polling the folder grant.
+# Pin `android-activity` to whatever dioxus-mobile/tao resolve (check Cargo.lock
+# after the first android build) so there's only one JavaVM/context registry.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+futures-timer = "3"
+anyhow = "1"
 
 [features]
 default = ["desktop"]

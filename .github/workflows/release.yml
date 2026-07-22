@@ -1,0 +1,183 @@
+# Release pipeline, adapted from DivineDragonFanClub/dddioxus with an Android job added.
+# Manually dispatched: pick a tag, it builds Windows + macOS desktop and an Android APK
+# and attaches them to the GitHub release for that tag.
+#
+# Keep the dioxus-cli version below matched to the `dioxus` version in Cargo.toml, dx
+# errors on a mismatch.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+      prerelease:
+        description: "Mark the release as a prerelease"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    # .cargo/config.toml sets a nightly-only `-Z threads=8` rustflag for the windows
+    # target. This lets the stable CI toolchain accept it without changing the repo.
+    env:
+      RUSTC_BOOTSTRAP: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: cargo-bins/cargo-binstall@main
+      - run: cargo binstall -y --force dioxus-cli@0.7.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stamp version from tag
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.tag }}" -replace '^v',''
+          (Get-Content Cargo.toml) -replace '^version = ".*"', "version = ""$ver""" | Set-Content Cargo.toml
+          Write-Host "Building version $ver"
+          Select-String -Path Cargo.toml -Pattern '^version' | Select-Object -First 1
+
+      - name: Build portable app
+        run: dx build --release --platform desktop
+
+      - name: Zip portable app
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path target -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\dx\\' -and $_.FullName -match '\\release\\' -and $_.Name -ne 'dx.exe' } |
+                 Select-Object -First 1
+          if (-not $exe) { throw "portable exe not found under target/dx" }
+          $appdir = $exe.Directory.FullName
+          Write-Host "Packaging $appdir"
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Compress-Archive -Path (Join-Path $appdir '*') -DestinationPath "out/CobaltInstaller-windows-portable.zip" -Force
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          files: out/*.zip
+          fail_on_unmatched_files: true
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install dioxus CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo binstall -y --force --targets aarch64-apple-darwin dioxus-cli@0.7.9
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/dx" --version
+
+      - name: Stamp version from tag
+        run: |
+          ver="${{ inputs.tag }}"; ver="${ver#v}"
+          sed -i '' -E "s/^version = \".*\"/version = \"$ver\"/" Cargo.toml
+          echo "Building version $ver"
+          grep -m1 '^version' Cargo.toml
+
+      - name: Bundle both arches
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          dx bundle --release --platform desktop --package-types macos \
+            --target aarch64-apple-darwin --out-dir out-arm
+          dx bundle --release --platform desktop --package-types macos \
+            --target x86_64-apple-darwin --out-dir out-x64
+
+      - name: Merge into a universal .app and zip it
+        run: |
+          set -euo pipefail
+          app_name=$(basename "$(ls -d out-arm/*.app | head -1)")
+          bin=$(ls "out-arm/$app_name/Contents/MacOS" | head -1)
+          lipo -create \
+            "out-arm/$app_name/Contents/MacOS/$bin" \
+            "out-x64/$app_name/Contents/MacOS/$bin" \
+            -output "out-arm/$app_name/Contents/MacOS/$bin"
+          lipo -info "out-arm/$app_name/Contents/MacOS/$bin"
+
+          mkdir -p out
+          ( cd out-arm && ditto -c -k --sequesterRsrc --keepParent "$app_name" "../out/${app_name%.app}-macos-universal.zip" )
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          files: out/*.zip
+          fail_on_unmatched_files: true
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK / platform / build-tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "ndk;27.2.12479018" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install dioxus CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo binstall -y --force dioxus-cli@0.7.9
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Stamp version from tag
+        run: |
+          ver="${{ inputs.tag }}"; ver="${ver#v}"
+          sed -i -E "s/^version = \".*\"/version = \"$ver\"/" Cargo.toml
+          echo "Building version $ver"
+          grep -m1 '^version' Cargo.toml
+
+      # android/build.sh does `dx build --release`, overlays the SAMMIE launcher icon (dx
+      # has no config for it), and runs assembleRelease with minify off, signed with the
+      # debug key. See the script for why. Produces a ~8MB release APK.
+      - name: Build Android APK
+        run: bash android/build.sh
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          cp target/dx/CobaltInstaller/release/android/app/app/build/outputs/apk/release/app-release.apk \
+             out/CobaltInstaller-android.apk
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          files: out/*.apk
+          fail_on_unmatched_files: true

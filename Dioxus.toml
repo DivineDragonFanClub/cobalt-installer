@@ -4,6 +4,13 @@
 name = "Cobalt Installer"
 default_platform = "desktop"
 
+# Android: we only override MainActivity (it owns the folder picker and the SAF
+# file writes). We do NOT supply a custom manifest, dx's default already adds the
+# INTERNET permission and the right AppCompat theme/icon, and that's all we need
+# (SAF needs no storage permission). min sdk 29 (Android 10) covers the SAF APIs.
+android_main_activity = "android/MainActivity.kt"
+android_min_sdk_version = 29
+
 [bundle]
 identifier = "com.divinedragonfanclub"
 publisher = "Divine Dragon Fan Club"

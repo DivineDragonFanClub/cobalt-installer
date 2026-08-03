@@ -16,6 +16,13 @@ identifier = "com.divinedragonfanclub"
 publisher = "Divine Dragon Fan Club"
 icon = ["assets/SAMMIE.png"]
 
+# Register the app as the handler for nxm:// links (NexusMods "Mod Manager Download"). dx maps this
+# to CFBundleURLTypes in the macOS Info.plist and an intent-filter on Android. The Rust side catches
+# the link via the Opened event in Body (src/main.rs). Only takes effect in a bundled build
+# (dx bundle), a dev `dx serve` app isn't registered with the OS as a URL handler.
+[deep_links]
+schemes = ["nxm"]
+
 [web.app]
 
 # HTML title tag content

@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 
 #[cfg(feature = "desktop")]
 use dioxus::desktop::use_window;
+// Catching the nxm:// links the OS hands us for NexusMods "Mod Manager Download".
+#[cfg(feature = "desktop")]
+use dioxus::desktop::{tao::event::Event, use_wry_event_handler};
 use dioxus::{logger::tracing, prelude::*};
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -26,6 +29,19 @@ use zip::ZipArchive;
 
 #[cfg(feature = "desktop")]
 use dioxus_sdk::storage::*;
+
+// The GameBanana mod browser (browse/search, install, config.yaml generation) is desktop only for
+// now. It's split into modules to keep main.rs readable, the Android build never pulls it in.
+#[cfg(feature = "desktop")]
+mod gamebanana;
+#[cfg(feature = "desktop")]
+mod install;
+#[cfg(feature = "desktop")]
+mod mods_ui;
+#[cfg(feature = "desktop")]
+mod nexus;
+#[cfg(feature = "desktop")]
+mod nexus_ui;
 
 // Everything about locating an emulator on the host filesystem is desktop only.
 // On Android we don't hunt for install folders, the user hands us Eden's folder
@@ -87,6 +103,29 @@ static EMULATORS: &[Emulator] = &[
 #[cfg(feature = "desktop")]
 fn get_emulator(name: &str) -> Option<&'static Emulator> {
     EMULATORS.iter().find(|e| e.name == name)
+}
+
+// The SD-card root for the current install choice, either an emulator's folder or a raw SD card.
+// Both the installer and the mod browser resolve their target through this so they always agree.
+#[cfg(feature = "desktop")]
+fn resolve_sd_root(installation_type: &str, sdcard: &str) -> Option<std::path::PathBuf> {
+    if installation_type == "SD Card" {
+        if sdcard.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(sdcard))
+        }
+    } else {
+        get_emulator(installation_type).and_then(|e| e.sd_card_path())
+    }
+}
+
+// Is Cobalt actually installed at this SD root? release.zip lays down engage/cobalt (Cobalt's own
+// runtime folder), so its presence is a reliable marker. We don't check engage/mods because the
+// installer creates that folder itself, so it'd be a false positive.
+#[cfg(feature = "desktop")]
+fn is_cobalt_installed(sd_root: &Path) -> bool {
+    sd_root.join("engage").join("cobalt").is_dir()
 }
 
 fn main() {
@@ -331,7 +370,7 @@ pub fn Hero() -> Element {
                 }
             }
             div { id: "main-container",
-                Controls { status_message }
+                Body { status_message }
                 div { id: "credits",
                     p {
                         "Having issues? "
@@ -345,15 +384,123 @@ pub fn Hero() -> Element {
     }
 }
 
+// Desktop body: two tabs, the Cobalt installer and the mod browser. The installer stays reachable
+// so the user can update Cobalt anytime, and the Mods tab stays locked until Cobalt is installed.
+#[cfg(feature = "desktop")]
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Cobalt,
+    Mods,
+}
+
+#[cfg(feature = "desktop")]
+#[component]
+fn Body(status_message: Signal<String>) -> Element {
+    // The install target lives here (shared by both tabs) so the Cobalt tab's choice drives which
+    // folder the mod browser installs into.
+    let installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || "Ryujinx".to_string());
+    let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || "".to_string());
+    let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
+    let mut active_tab = use_signal(|| Tab::Cobalt);
+    // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
+    let mut nxm_status = use_signal(|| None::<String>);
+
+    let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
+    let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
+
+    // Don't strand the user on a locked Mods tab if they switch to a target without Cobalt.
+    use_effect(move || {
+        if active_tab() == Tab::Mods && !cobalt_ready {
+            active_tab.set(Tab::Cobalt);
+        }
+    });
+
+    // The OS delivers an nxm:// link (from NexusMods' "Mod Manager Download") to the running app as
+    // an Opened event. Parse it and install with the stored key, showing progress in the banner.
+    use_wry_event_handler(move |event, _| {
+        let Event::Opened { urls } = event else {
+            return;
+        };
+        for url in urls {
+            if url.scheme() != "nxm" {
+                continue;
+            }
+            let link = url.as_str().to_string();
+            let apikey = nexus_apikey().trim().to_string();
+            let sd = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
+            if apikey.is_empty() {
+                nxm_status.set(Some("Connect your NexusMods account first (Mods tab → NexusMods).".to_string()));
+                continue;
+            }
+            let Some(sd) = sd else {
+                nxm_status.set(Some("Choose an install target on the Cobalt tab first.".to_string()));
+                continue;
+            };
+            nxm_status.set(Some("Starting NexusMods download…".to_string()));
+            let mut st = nxm_status;
+            spawn(async move {
+                match nexus_ui::run_nxm(&link, apikey, sd, move |s| st.set(Some(s))).await {
+                    Ok(name) => st.set(Some(format!("Installed {name}!"))),
+                    Err(e) => st.set(Some(format!("Error: {e}"))),
+                }
+            });
+        }
+    });
+
+    rsx! {
+        if let Some(msg) = nxm_status() {
+            div { class: "nxm_banner",
+                span { "{msg}" }
+                button { class: "close", onclick: move |_| nxm_status.set(None), "X" }
+            }
+        }
+        div { class: "tab_bar",
+            button {
+                class: if active_tab() == Tab::Cobalt { "tab active" } else { "tab" },
+                onclick: move |_| active_tab.set(Tab::Cobalt),
+                "Install Cobalt"
+            }
+            button {
+                class: if active_tab() == Tab::Mods { "tab active" } else { "tab" },
+                disabled: !cobalt_ready,
+                title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
+                onclick: move |_| active_tab.set(Tab::Mods),
+                "Browse Mods"
+            }
+        }
+        match active_tab() {
+            Tab::Cobalt => rsx! {
+                Controls { status_message, installation_type, user_selected_sdcard_path }
+            },
+            Tab::Mods => rsx! {
+                if let Some(root) = sd_root.clone() {
+                    mods_ui::ModBrowser { sd_root: root }
+                } else {
+                    div { class: "mod_message", "Pick an install target on the Cobalt tab first." }
+                }
+            },
+        }
+    }
+}
+
+// Android body: just the Eden installer, no mod browser yet.
+#[cfg(target_os = "android")]
+#[component]
+fn Body(status_message: Signal<String>) -> Element {
+    rsx! {
+        Controls { status_message }
+    }
+}
+
 // Desktop controls: pick an emulator (or a raw SD card folder), then download and
 // unzip Cobalt straight onto the host filesystem.
 #[cfg(feature = "desktop")]
 #[component]
-fn Controls(mut status_message: Signal<String>) -> Element {
-    let mut installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || { "Ryujinx".to_string()});
-
-    let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || { "".to_string()});
-
+fn Controls(
+    mut status_message: Signal<String>,
+    mut installation_type: Signal<String>,
+    user_selected_sdcard_path: Signal<String>,
+) -> Element {
     let is_install_ready = {
         if installation_type() == "SD Card" {
             !user_selected_sdcard_path().is_empty()

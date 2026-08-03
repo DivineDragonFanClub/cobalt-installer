@@ -195,3 +195,443 @@ button.close {
     align-items: center;
     margin-top: 10px;
 }
+
+/* Tabs: Install Cobalt vs Browse Mods */
+.tab_bar {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    margin-top: 10px;
+    border-bottom: 2px solid var(--tertiary);
+}
+
+.tab_bar .tab {
+    background-color: transparent;
+    color: #cfcfcf;
+    border-radius: 5px 5px 0 0;
+    &.active {
+        background-color: var(--primary);
+        color: white;
+    }
+    &:disabled {
+        color: #666;
+        cursor: not-allowed;
+    }
+    &:hover:enabled {
+        color: white;
+    }
+}
+
+/* Source toggle (GameBanana / NexusMods) */
+.source_toggle {
+    display: flex;
+    gap: 6px;
+    margin-top: 15px;
+}
+
+.source_toggle .src {
+    background-color: #1a1d24;
+    color: #cfcfcf;
+    border: 1px solid #2a2f3a;
+    padding: 8px 18px;
+    &.active {
+        background-color: var(--secondary);
+        color: white;
+        border-color: var(--secondary);
+    }
+    &:hover:enabled {
+        color: white;
+    }
+}
+
+/* NexusMods browser */
+#nexus_browser {
+    margin-top: 5px;
+}
+
+.nexus_userbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    color: #cfcfcf;
+    font-size: 14px;
+    button {
+        margin-left: auto;
+        padding: 6px 14px;
+    }
+}
+
+.premium_badge {
+    background-color: #b8860b;
+    color: white;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 3px;
+}
+
+.nexus_setup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nexus_key_row {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+    input {
+        flex: 1;
+        padding: 10px;
+        font-size: 14px;
+        border-radius: 5px;
+        border: none;
+    }
+}
+
+.nxm_paste {
+    background-color: #1a1d24;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 15px;
+    summary {
+        cursor: pointer;
+        color: var(--secondary);
+        font-size: 14px;
+    }
+    .note {
+        margin-top: 8px;
+    }
+}
+
+.nxm_status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #cfcfcf;
+}
+
+.manual_install {
+    margin-top: 15px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2f3a;
+}
+
+.manual_btn {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 8px 16px;
+    background-color: var(--secondary);
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    &:hover {
+        background-color: #4f7ea8;
+    }
+}
+
+.nxm_banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background-color: #14331f;
+    border: 1px solid #1f7a3d;
+    border-radius: 6px;
+    font-size: 14px;
+    span {
+        flex: 1;
+    }
+}
+
+.nexus_feed_toggle {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 15px;
+    border-bottom: 2px solid var(--tertiary);
+    .nsfw_toggle {
+        margin-left: auto;
+        color: #cfcfcf;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+}
+
+/* Mod browser */
+#mod_browser {
+    margin-top: 15px;
+}
+
+.mod_search_bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px;
+
+    input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        font-size: 16px;
+        border-radius: 5px;
+        border: none;
+    }
+    .nsfw_toggle {
+        color: #cfcfcf;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
+    .category_select {
+        padding: 10px;
+        font-size: 14px;
+        border-radius: 5px;
+        border: none;
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    }
+}
+
+button.danger {
+    background-color: #8a2b2b;
+    padding: 8px 16px;
+    &:hover:enabled {
+        background-color: #a53333;
+    }
+}
+
+.mod_detail_head {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 15px;
+    margin: 0 30px 15px 0;
+}
+
+.mod_message {
+    color: grey;
+    padding: 20px 0;
+    &.error {
+        color: #e06c6c;
+    }
+}
+
+.mod_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.mod_card {
+    background-color: #1a1d24;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    &:hover {
+        border-color: var(--secondary);
+    }
+}
+
+.mod_thumb {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background-color: #0f1116;
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    &.blurred img {
+        filter: blur(18px);
+    }
+}
+
+.mod_card_body {
+    padding: 8px 10px;
+}
+
+.mod_card_title {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mod_card_author {
+    font-size: 12px;
+    color: grey;
+}
+
+.installed_badge {
+    display: inline-block;
+    margin-top: 5px;
+    font-size: 11px;
+    background-color: #1f7a3d;
+    color: white;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.mod_pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 15px;
+    color: #cfcfcf;
+    button {
+        background-color: var(--secondary);
+        padding: 6px 14px;
+        &:disabled {
+            background-color: #474747;
+            cursor: not-allowed;
+        }
+    }
+}
+
+/* Detail overlay */
+.mod_detail_overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 20px;
+    overflow-y: auto;
+    z-index: 100;
+}
+
+.mod_detail_panel {
+    position: relative;
+    background-color: #171a21;
+    border: 1px solid var(--secondary);
+    border-radius: 8px;
+    padding: 25px;
+    max-width: 720px;
+    width: 100%;
+
+    .close {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+    }
+}
+
+.mod_detail_title {
+    margin: 0 30px 5px 0;
+}
+
+.mod_detail_meta {
+    color: grey;
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.mod_screens {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+    img {
+        height: 150px;
+        border-radius: 4px;
+    }
+}
+
+.mod_desc {
+    color: #d8d8d8;
+    font-size: 14px;
+    line-height: 1.5;
+    max-height: 180px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.mod_files {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.install_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    background-color: #1a1d24;
+    border-radius: 5px;
+    padding: 10px 12px;
+
+    .file_info {
+        flex: 1;
+        font-size: 13px;
+        word-break: break-all;
+    }
+    .progress {
+        flex: 1;
+        height: 8px;
+        background-color: #2a2f3a;
+        border-radius: 4px;
+        overflow: hidden;
+        .bar {
+            height: 100%;
+            background-color: var(--secondary);
+            transition: width 0.2s;
+        }
+    }
+    .progress_label {
+        font-size: 12px;
+        color: grey;
+        white-space: nowrap;
+    }
+    .muted {
+        color: grey;
+        font-size: 13px;
+    }
+    .ok {
+        color: #4fbf6f;
+        font-weight: 600;
+    }
+    .errline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .err {
+        color: #e06c6c;
+        font-size: 13px;
+    }
+    button {
+        padding: 6px 14px;
+    }
+    button.primary {
+        background-color: var(--primary);
+    }
+}
+
+.mod_page_link {
+    display: inline-block;
+    margin-top: 15px;
+    color: var(--secondary);
+    text-decoration: none;
+    font-size: 13px;
+    &:hover {
+        text-decoration: underline;
+    }
+}

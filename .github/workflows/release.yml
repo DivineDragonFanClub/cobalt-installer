@@ -113,6 +113,23 @@ jobs:
           lipo -info "out-arm/$app_name/Contents/MacOS/$bin"
           echo "APP_NAME=$app_name" >> "$GITHUB_ENV"
 
+      # Register the app as the nxm:// handler (NexusMods "Mod Manager Download"). dx's [deep_links]
+      # only wires this into the mobile manifests, not the desktop .app, so we inject
+      # CFBundleURLTypes here. Must run BEFORE signing so the signature covers the change (same steps
+      # as macos/build.sh).
+      - name: Register nxm:// URL scheme
+        run: |
+          set -euo pipefail
+          plist="out-arm/$APP_NAME/Contents/Info.plist"
+          pb=/usr/libexec/PlistBuddy
+          $pb -c "Delete :CFBundleURLTypes" "$plist" 2>/dev/null || true
+          $pb -c "Add :CFBundleURLTypes array" "$plist"
+          $pb -c "Add :CFBundleURLTypes:0 dict" "$plist"
+          $pb -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.divinedragonfanclub.nxm" "$plist"
+          $pb -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
+          $pb -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string nxm" "$plist"
+          plutil -lint "$plist"
+
       # Signs + notarizes so the app opens with no Gatekeeper warning. Skipped (leaving an
       # unsigned zip) if the signing secrets aren't set. See docs/macos-signing.md.
       - name: Check for signing secrets

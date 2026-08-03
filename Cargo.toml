@@ -12,14 +12,22 @@ dioxus = { version = "0.7.9" }
 dirs = "5.0.1"
 zip = "2.2.2"
 # rustls instead of the default native-tls so the Android build doesn't have to
-# cross-compile OpenSSL. Desktop is happy with rustls too.
-reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"] }
+# cross-compile OpenSSL. Desktop is happy with rustls too. json/stream are for the
+# GameBanana API and the streaming mod download.
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "json", "stream"] }
 
 # Desktop-only deps. The Android build doesn't pull these in, so nothing here
 # needs to cross-compile for android.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 dioxus-desktop = "0.7.9"
 dioxus-sdk = { version = "0.7.0", features = ["storage"] }
+# The mod browser: serde for the GameBanana API + config.yaml, serde_yaml to write configs
+# Cobalt can read, futures-util to consume the download byte stream.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+futures-util = "0.3"
+anyhow = "1"
 
 # Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
 # `futures-timer` gives us an await-able delay for polling the folder grant.
@@ -30,6 +38,11 @@ jni = "0.21"
 ndk-context = "0.1"
 futures-timer = "3"
 anyhow = "1"
+
+# Only for the network-gated smoke test (install::tests::live_install_roundtrip), which needs an
+# async runtime to drive reqwest. Not part of the shipped app.
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = ["desktop"]

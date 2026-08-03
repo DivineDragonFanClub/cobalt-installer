@@ -35,7 +35,11 @@ use dioxus_sdk::storage::*;
 #[cfg(feature = "desktop")]
 mod gamebanana;
 #[cfg(feature = "desktop")]
+mod icons;
+#[cfg(feature = "desktop")]
 mod install;
+#[cfg(feature = "desktop")]
+mod installed_ui;
 #[cfg(feature = "desktop")]
 mod mods_ui;
 #[cfg(feature = "desktop")]
@@ -134,10 +138,19 @@ fn main() {
     // renderer (no `dirs` paths, they come back None there).
     #[cfg(feature = "desktop")]
     {
+        use dioxus::desktop::tao::{dpi::LogicalSize, window::WindowBuilder};
+
         dioxus_sdk::storage::set_dir!();
+        // Open at a 16:9 size, and keep a 16:9 floor so the layout never gets squished.
+        let window = WindowBuilder::new()
+            .with_title("Cobalt Installer")
+            .with_inner_size(LogicalSize::new(1280.0, 720.0))
+            .with_min_inner_size(LogicalSize::new(960.0, 540.0));
         LaunchBuilder::new()
             .with_cfg(
-                dioxus_desktop::Config::new().with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller"))
+                dioxus_desktop::Config::new()
+                    .with_window(window)
+                    .with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller")),
             )
             .launch(App);
     }
@@ -231,7 +244,7 @@ mod saf {
 }
 
 #[cfg(feature = "desktop")]
-fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
+pub(crate) fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     let cmd = match std::env::consts::OS {
         "macos" => "open",
         "windows" => "explorer",
@@ -356,28 +369,29 @@ pub fn Hero() -> Element {
 
     rsx! {
         div { id: "hero",
-            div {
-                div { id: "welcome",
-                    h1 { "Welcome to the Cobalt Installer" }
-                    img {
-                        id: "sammie",
-                        src: SAMMIE,
-                        alt: "Sammie stares at you, judgingly",
-                        onclick: move |_| {
-                            num_clicks.set(num_clicks() + 1);
-                        },
-                    }
+            header { id: "app_header",
+                img {
+                    id: "sammie",
+                    src: SAMMIE,
+                    alt: "Sammie stares at you, judgingly",
+                    onclick: move |_| {
+                        num_clicks.set(num_clicks() + 1);
+                    },
                 }
+                div { class: "app_header_text",
+                    h1 { "Cobalt Installer" }
+                    p { class: "app_tagline", "Mods for Fire Emblem Engage" }
+                }
+                a { class: "header_help", href: "https://discord.gg/BH6XhKsKdS", "Need help?" }
             }
             div { id: "main-container",
                 Body { status_message }
-                div { id: "credits",
-                    p {
-                        "Having issues? "
-                        a { href: "https://discord.gg/BH6XhKsKdS", "Get help!" }
-                    }
-                    p { "Sommie icon by badatgames26" }
-                    p { "Version {env!(\"CARGO_PKG_VERSION\")}" }
+                footer { id: "credits",
+                    span { "Sommie icon by badatgames26" }
+                    span { class: "sep", "·" }
+                    span { "v{env!(\"CARGO_PKG_VERSION\")}" }
+                    span { class: "sep", "·" }
+                    a { href: "https://discord.gg/BH6XhKsKdS", "Get help" }
                 }
             }
         }
@@ -389,8 +403,9 @@ pub fn Hero() -> Element {
 #[cfg(feature = "desktop")]
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
-    Cobalt,
-    Mods,
+    Install,
+    Browse,
+    MyMods,
 }
 
 #[cfg(feature = "desktop")]
@@ -401,17 +416,17 @@ fn Body(status_message: Signal<String>) -> Element {
     let installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || "Ryujinx".to_string());
     let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || "".to_string());
     let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
-    let mut active_tab = use_signal(|| Tab::Cobalt);
+    let mut active_tab = use_signal(|| Tab::Install);
     // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
     let mut nxm_status = use_signal(|| None::<String>);
 
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
 
-    // Don't strand the user on a locked Mods tab if they switch to a target without Cobalt.
+    // Don't strand the user on a locked tab if they switch to a target without Cobalt.
     use_effect(move || {
-        if active_tab() == Tab::Mods && !cobalt_ready {
-            active_tab.set(Tab::Cobalt);
+        if active_tab() != Tab::Install && !cobalt_ready {
+            active_tab.set(Tab::Install);
         }
     });
 
@@ -454,31 +469,58 @@ fn Body(status_message: Signal<String>) -> Element {
                 button { class: "close", onclick: move |_| nxm_status.set(None), "X" }
             }
         }
-        div { class: "tab_bar",
-            button {
-                class: if active_tab() == Tab::Cobalt { "tab active" } else { "tab" },
-                onclick: move |_| active_tab.set(Tab::Cobalt),
-                "Install Cobalt"
-            }
-            button {
-                class: if active_tab() == Tab::Mods { "tab active" } else { "tab" },
-                disabled: !cobalt_ready,
-                title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
-                onclick: move |_| active_tab.set(Tab::Mods),
-                "Browse Mods"
-            }
-        }
-        match active_tab() {
-            Tab::Cobalt => rsx! {
-                Controls { status_message, installation_type, user_selected_sdcard_path }
-            },
-            Tab::Mods => rsx! {
-                if let Some(root) = sd_root.clone() {
-                    mods_ui::ModBrowser { sd_root: root }
-                } else {
-                    div { class: "mod_message", "Pick an install target on the Cobalt tab first." }
+        div { class: "app_shell",
+            nav { class: "sidebar",
+                button {
+                    class: if active_tab() == Tab::Install { "nav_item active" } else { "nav_item" },
+                    onclick: move |_| active_tab.set(Tab::Install),
+                    span { class: "nav_icon", {icons::download(18)} }
+                    span { class: "nav_label", "Install Cobalt" }
                 }
-            },
+                button {
+                    class: if active_tab() == Tab::Browse { "nav_item active" } else { "nav_item" },
+                    disabled: !cobalt_ready,
+                    title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
+                    onclick: move |_| active_tab.set(Tab::Browse),
+                    span { class: "nav_icon", {icons::search(18)} }
+                    span { class: "nav_label", "Browse Mods" }
+                    if !cobalt_ready {
+                        span { class: "nav_lock", {icons::lock(13)} }
+                    }
+                }
+                button {
+                    class: if active_tab() == Tab::MyMods { "nav_item active" } else { "nav_item" },
+                    disabled: !cobalt_ready,
+                    title: if cobalt_ready { "" } else { "Install Cobalt first to manage mods" },
+                    onclick: move |_| active_tab.set(Tab::MyMods),
+                    span { class: "nav_icon", {icons::package(18)} }
+                    span { class: "nav_label", "My Mods" }
+                    if !cobalt_ready {
+                        span { class: "nav_lock", {icons::lock(13)} }
+                    }
+                }
+            }
+            div { class: "tab_content",
+                match active_tab() {
+                    Tab::Install => rsx! {
+                        Controls { status_message, installation_type, user_selected_sdcard_path }
+                    },
+                    Tab::Browse => rsx! {
+                        if let Some(root) = sd_root.clone() {
+                            mods_ui::ModBrowser { sd_root: root }
+                        } else {
+                            div { class: "mod_message", "Pick an install target on the Install tab first." }
+                        }
+                    },
+                    Tab::MyMods => rsx! {
+                        if let Some(root) = sd_root.clone() {
+                            installed_ui::MyMods { sd_root: root }
+                        } else {
+                            div { class: "mod_message", "Pick an install target on the Install tab first." }
+                        }
+                    },
+                }
+            }
         }
     }
 }

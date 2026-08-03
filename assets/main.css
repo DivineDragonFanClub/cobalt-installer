@@ -1,468 +1,699 @@
-/* App-wide styling */
+/* ============================================================================
+   Cobalt Installer styles
+   Dark theme, blue accent (matches the Cobalt/FE Engage vibe). Organized as a
+   small design system: tokens up top, then base, layout, components.
+   ============================================================================ */
 
-/* color variables */
+/* ---- Design tokens -------------------------------------------------------- */
 :root {
-    --primary: #0047ab;
+    /* surfaces, from deepest background up to raised cards */
+    --bg: #0c0e13;
+    --surface: #14181f;
+    --surface-2: #1b212b;
+    --surface-3: #232b37;
+
+    /* lines */
+    --border: #2a3240;
+    --border-strong: #3a4557;
+
+    /* text */
+    --text: #eaedf2;
+    --muted: #9aa5b4;
+    --faint: #6b7688;
+
+    /* accent (blue) + a couple of status colors */
+    --accent: #3b82f6;
+    --accent-hover: #5a97f8;
+    --accent-dim: #1e3a63;
+    --good: #34c46a;
+    --good-dim: #123a24;
+    --warn: #e0a23c;
+    --danger: #e0574f;
+    --danger-dim: #4a1f1d;
+
+    /* legacy names still referenced in a few older rules */
+    --primary: var(--accent);
     --secondary: #2f88d6;
-    --tertiary: #3f6996;
+    --tertiary: #34405a;
+
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- Base ----------------------------------------------------------------- */
+* {
+    box-sizing: border-box;
+}
+
+/* Paint the webview root dark so a rubber-band overscroll never flashes white behind the page. */
+html {
+    background-color: var(--bg);
+    overscroll-behavior: none;
 }
 
 body {
-    background-color: #0f1116;
-    color: #ffffff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-#hero {
     margin: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    /* stop the elastic bounce past the top/bottom of the page */
+    overscroll-behavior: none;
+}
+
+/* The page gradient lives on a fixed layer so it paints once instead of repainting every scroll
+   frame (background-attachment: fixed forces a full-gradient repaint on each frame in WebKit). */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(1200px 500px at 50% -200px, #16203a 0%, var(--bg) 60%);
+}
+
+h1, h2, h3 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+code {
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    color: var(--muted);
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}
+
+/* Inline SVG icons: block so they don't pick up a baseline gap, and they inherit text color. */
+.icon {
+    display: block;
+    flex-shrink: 0;
+}
+
+/* Slim, dark scrollbars so scroll areas don't clash with the theme. Kept simple: the
+   background-clip/transparent-border inset trick renders an invisible thumb in macOS WKWebView. */
+::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #4a566c;
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* ---- Layout --------------------------------------------------------------- */
+#hero {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
 }
 
-#header {
-    max-width: 1200px;
-}
-
-#installation_type_container {
+#app_header {
+    width: 100%;
     display: flex;
-    flex-direction: column;
-}
-
-#welcome {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
     align-items: center;
-    margin-bottom: 10px;
+    gap: 16px;
+    padding: 22px 28px 18px;
 }
 
 #sammie {
-    width: 100px;
-    height: 100px;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+#sammie:hover {
+    transform: rotate(-6deg) scale(1.06);
+}
+
+.app_header_text {
+    display: flex;
+    flex-direction: column;
+}
+.app_header_text h1 {
+    font-size: 22px;
+    background: linear-gradient(90deg, #eaf1ff, #9dc0ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.app_tagline {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.header_help {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition: border-color 0.15s, color 0.15s;
+}
+.header_help:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    text-decoration: none;
 }
 
 #main-container {
-    width: 80%;
+    width: 100%;
+    flex: 1;
+    padding: 0 28px 24px;
+    display: flex;
+    flex-direction: column;
 }
 
+#credits {
+    margin-top: auto;
+    padding-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--faint);
+    font-size: 12px;
+}
+#credits a {
+    color: var(--muted);
+}
+#credits .sep {
+    opacity: 0.5;
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+button {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+button:hover:enabled {
+    border-color: var(--border-strong);
+    background: var(--surface-3);
+}
+button:active:enabled {
+    transform: translateY(1px);
+}
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+button.primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+}
+button.primary:hover:enabled {
+    background: var(--accent-hover);
+    border-color: transparent;
+}
+button.primary:disabled {
+    background: #38404e;
+    color: #aab3c0;
+}
+
+button.secondary {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+button.ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+    padding: 7px 13px;
+}
+button.ghost:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+
+button.danger {
+    background: var(--danger);
+    border-color: transparent;
+    color: #fff;
+}
+button.danger:hover:enabled {
+    background: #ec6a62;
+    border-color: transparent;
+}
+
+button.danger_outline {
+    background: transparent;
+    border-color: var(--danger-dim);
+    color: #e88b85;
+    padding: 7px 13px;
+}
+button.danger_outline:hover:enabled {
+    background: var(--danger-dim);
+    color: #ffd7d3;
+    border-color: var(--danger);
+}
+
+button.close {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+    border-radius: var(--radius-sm);
+}
+button.close:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+
+/* ---- Sidebar nav ---------------------------------------------------------- */
+.app_shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+}
+.sidebar {
+    width: 210px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+.nav_item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 11px 13px;
+    border-radius: 9px;
+    font-size: 14px;
+}
+.nav_item:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+.nav_item.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+}
+/* Keep the active item looking active on hover instead of falling back to the grey hover. */
+.nav_item.active:hover:enabled {
+    background: var(--accent-hover);
+    color: #fff;
+}
+.nav_item:disabled {
+    color: var(--faint);
+    background: transparent;
+    cursor: not-allowed;
+}
+.nav_icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.nav_label {
+    flex: 1;
+}
+.nav_lock {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.6;
+}
+
+/* min-width:0 lets the mod grid shrink inside the flex row instead of overflowing. */
+.tab_content {
+    flex: 1;
+    min-width: 0;
+    animation: fadein 0.18s ease;
+}
+@keyframes fadein {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---- Install controls (message zones) ------------------------------------- */
 #installation_type_container {
-    select {
-        padding: 10px;
-        font-size: 16px;
-        border-radius: 5px;
-        border: none;
-        margin-top: 10px;
-        width: fit-content
-    }
+    display: flex;
+    flex-direction: column;
+}
+
+.message_zone {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tertiary);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 12px;
+}
+.message_zone.first {
+    border-left-color: var(--secondary);
+}
+.message_zone.second {
+    border-left-color: var(--tertiary);
+}
+.message_zone.third {
+    border-left-color: var(--good);
+}
+.message_zone.disabled {
+    border-left-color: var(--border);
+    opacity: 0.75;
+}
+
+#installation_type_container label {
+    color: var(--muted);
+    font-size: 14px;
+}
+#installation_type_container select,
+.category_select,
+.nexus_key_row input,
+.mod_search_bar input[type="text"] {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+}
+#installation_type_container select {
+    margin-top: 10px;
+    width: fit-content;
+}
+select:focus,
+input:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 #action_zone {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-top: 10px;
-    .action_zone_buttons {
-        display: flex;
-        flex-direction: row;
-        gap: 5px;
-    }
-    .status {
-        margin-top: 5px;
-    }
-    margin-bottom: 20px;
+    gap: 12px;
 }
-
-button {
-    padding: 10px 20px;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-    text-decoration: none;
-}
-
-button.primary {
-    background-color: var(--primary);
-    &:disabled {
-        background-color: #666;
-        cursor: not-allowed;
-    }
-    &:hover:enabled {
-        background-color: #0056b3;
-    }
-}
-
-button.secondary {
-    background-color: var(--secondary);
-    &:disabled {
-        background-color: #474747;
-        cursor: not-allowed;
-    }
-    &:hover:enabled {
-        background-color: #4f7ea8;
-    }
-}
-
-button.close {
-    background-color: #474747;
-    &:disabled {
-        background-color: #333;
-        cursor: not-allowed;
-    }
-    width: 15px;
-    height: 15px;
+#action_zone .action_zone_buttons {
     display: flex;
-    justify-content: center;
-    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+}
+#action_zone .status {
+    color: var(--muted);
+    background: transparent;
+    padding: 0;
 }
 
-#sd_select_label {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: var(--primary);
-    color: white;
-    text-align: center;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-    text-decoration: none;
-    background-color: var(--primary);
-
-    &:hover {
-        background-color: #0056b3;
-    }
-
-    &:disabled {
-        background-color: #666;
-        cursor: not-allowed;
-    }
+#sd_select_container div {
+    color: var(--muted);
 }
-
-.message_zone {
-    margin-top: 10px;
-    padding: 20px;
-    border: 2px solid var(--primary);
-}
-
-.message_zone.first {
-    border-color: var(--tertiary);
-}
-
-.message_zone.second {
-    border-color: var(--secondary);
-}
-
-.message_zone.third {
-    border-color: var(--primary);
-}
-
-.message_zone.disabled {
-    border-color: #666;
-}
-
-#credits {
-    background-color: #1f1f1f;
-    color: white;
-    display: flex;
-    flex-direction: column;
-    bottom: 0;
-    p {
-        padding-left: 10px;
-        color: grey;
-    }
-    a {
-        color: white;
-        text-decoration: none;
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-}
-
-.note {
-    color: grey;
-    font-size: 12px;
-}
-
 #sd_select_button_container {
     display: flex;
     flex-direction: row;
-    gap: 10px;
-    align-items: center;
-    margin-top: 10px;
-}
-
-/* Tabs: Install Cobalt vs Browse Mods */
-.tab_bar {
-    display: flex;
-    flex-direction: row;
-    gap: 4px;
-    margin-top: 10px;
-    border-bottom: 2px solid var(--tertiary);
-}
-
-.tab_bar .tab {
-    background-color: transparent;
-    color: #cfcfcf;
-    border-radius: 5px 5px 0 0;
-    &.active {
-        background-color: var(--primary);
-        color: white;
-    }
-    &:disabled {
-        color: #666;
-        cursor: not-allowed;
-    }
-    &:hover:enabled {
-        color: white;
-    }
-}
-
-/* Source toggle (GameBanana / NexusMods) */
-.source_toggle {
-    display: flex;
-    gap: 6px;
-    margin-top: 15px;
-}
-
-.source_toggle .src {
-    background-color: #1a1d24;
-    color: #cfcfcf;
-    border: 1px solid #2a2f3a;
-    padding: 8px 18px;
-    &.active {
-        background-color: var(--secondary);
-        color: white;
-        border-color: var(--secondary);
-    }
-    &:hover:enabled {
-        color: white;
-    }
-}
-
-/* NexusMods browser */
-#nexus_browser {
-    margin-top: 5px;
-}
-
-.nexus_userbar {
-    display: flex;
-    align-items: center;
     gap: 12px;
-    margin: 12px 0;
-    color: #cfcfcf;
-    font-size: 14px;
-    button {
-        margin-left: auto;
-        padding: 6px 14px;
-    }
+    align-items: center;
+    margin-top: 12px;
 }
-
-.premium_badge {
-    background-color: #b8860b;
-    color: white;
-    font-size: 11px;
-    padding: 1px 8px;
-    border-radius: 3px;
-}
-
-.nexus_setup {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.nexus_key_row {
-    display: flex;
-    gap: 8px;
-    margin-top: 5px;
-    input {
-        flex: 1;
-        padding: 10px;
-        font-size: 14px;
-        border-radius: 5px;
-        border: none;
-    }
-}
-
-.nxm_paste {
-    background-color: #1a1d24;
-    border: 1px solid #2a2f3a;
-    border-radius: 6px;
-    padding: 10px 12px;
-    margin-bottom: 15px;
-    summary {
-        cursor: pointer;
-        color: var(--secondary);
-        font-size: 14px;
-    }
-    .note {
-        margin-top: 8px;
-    }
-}
-
-.nxm_status {
-    margin-top: 8px;
-    font-size: 13px;
-    color: #cfcfcf;
-}
-
-.manual_install {
-    margin-top: 15px;
-    padding-top: 12px;
-    border-top: 1px solid #2a2f3a;
-}
-
-.manual_btn {
+#sd_select_label {
     display: inline-block;
-    margin-top: 8px;
-    padding: 8px 16px;
-    background-color: var(--secondary);
-    color: white;
-    border-radius: 5px;
+    padding: 9px 16px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 14px;
-    &:hover {
-        background-color: #4f7ea8;
-    }
+    font-weight: 600;
+}
+#sd_select_label:hover {
+    background: var(--accent-hover);
 }
 
-.nxm_banner {
+.note {
+    color: var(--faint);
+    font-size: 12px;
+}
+
+/* ---- Source toggle (GameBanana / NexusMods) ------------------------------- */
+.source_toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    margin-bottom: 18px;
+}
+.source_toggle .src {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 7px 18px;
+    border-radius: 999px;
+}
+.source_toggle .src:hover:enabled {
+    color: var(--text);
+}
+.source_toggle .src.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* ---- Search + filters ----------------------------------------------------- */
+.mod_search_bar {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 12px;
-    padding: 10px 14px;
-    background-color: #14331f;
-    border: 1px solid #1f7a3d;
-    border-radius: 6px;
-    font-size: 14px;
-    span {
-        flex: 1;
-    }
+    margin-bottom: 18px;
 }
-
-.nexus_feed_toggle {
+.mod_search_bar input[type="text"] {
+    flex: 1;
+}
+.category_select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.nsfw_toggle {
     display: flex;
-    gap: 4px;
     align-items: center;
-    margin-bottom: 15px;
-    border-bottom: 2px solid var(--tertiary);
-    .nsfw_toggle {
-        margin-left: auto;
-        color: #cfcfcf;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
+    gap: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
 }
 
-/* Mod browser */
-#mod_browser {
-    margin-top: 15px;
-}
-
-.mod_search_bar {
-    display: flex;
-    flex-direction: row;
+/* ---- Chips / badges ------------------------------------------------------- */
+.installed_badge,
+.chip {
+    display: inline-flex;
     align-items: center;
-    gap: 15px;
-    margin-bottom: 15px;
-
-    input[type="text"] {
-        flex: 1;
-        padding: 10px;
-        font-size: 16px;
-        border-radius: 5px;
-        border: none;
-    }
-    .nsfw_toggle {
-        color: #cfcfcf;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        white-space: nowrap;
-    }
-    .category_select {
-        padding: 10px;
-        font-size: 14px;
-        border-radius: 5px;
-        border: none;
-        &:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-    }
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.installed_badge {
+    background: var(--good-dim);
+    color: #6fe39a;
+    border: 1px solid #1f7a44;
+}
+.chip.gb {
+    background: #3a2a10;
+    color: #f4c56b;
+    border: 1px solid #6b4e1e;
+}
+.chip.nexus {
+    background: #2a1a10;
+    color: #f0a06a;
+    border: 1px solid #6b3e1e;
+}
+.chip.manual {
+    background: var(--surface-3);
+    color: var(--muted);
+    border: 1px solid var(--border-strong);
+}
+.chip.warn {
+    background: #3a3410;
+    color: var(--warn);
+    border: 1px solid #6b5e1e;
+}
+.premium_badge {
+    background: #4a3a10;
+    color: #f4c56b;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
 }
 
-button.danger {
-    background-color: #8a2b2b;
-    padding: 8px 16px;
-    &:hover:enabled {
-        background-color: #a53333;
-    }
-}
-
-.mod_detail_head {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 15px;
-    margin: 0 30px 15px 0;
-}
-
-.mod_message {
-    color: grey;
-    padding: 20px 0;
-    &.error {
-        color: #e06c6c;
-    }
+/* ---- Mod grid + cards ----------------------------------------------------- */
+#mod_browser,
+#nexus_browser {
+    margin-top: 2px;
 }
 
 .mod_grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
 }
 
+/* Translucent, layered cards over the page gradient. No backdrop-filter: blurring the backdrop on
+   every card kills scroll performance, and over the mostly-flat background it's barely visible, so
+   a slightly more opaque gradient fill gives the same look for free. */
 .mod_card {
-    background-color: #1a1d24;
-    border: 1px solid #2a2f3a;
-    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(30, 37, 48, 0.82), rgba(22, 27, 35, 0.9));
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
     overflow: hidden;
     cursor: pointer;
-    transition: border-color 0.15s;
-    &:hover {
-        border-color: var(--secondary);
-    }
+    transition: border-color 0.15s, transform 0.14s, box-shadow 0.18s;
+}
+.mod_card:hover {
+    border-color: rgba(120, 165, 245, 0.4);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
 }
 
-.mod_thumb {
-    width: 100%;
+.mod_card_media {
+    position: relative;
     aspect-ratio: 16 / 10;
-    background-color: #0f1116;
-    img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-    }
-    &.blurred img {
-        filter: blur(18px);
-    }
+    overflow: hidden;
+}
+.mod_thumb {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+}
+.mod_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+.mod_card:hover .mod_thumb img {
+    transform: scale(1.05);
+}
+.mod_thumb.blurred img {
+    filter: blur(22px);
+    transform: scale(1.15);
+}
+
+/* Darkens the bottom of the image so the category chip stays readable. */
+.mod_card_scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0) 45%, rgba(10, 12, 17, 0.8) 100%);
+    pointer-events: none;
+}
+
+.mod_card_pills {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+}
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+}
+.pill.installed {
+    background: rgba(24, 90, 52, 0.72);
+    border-color: rgba(52, 196, 106, 0.6);
+    color: #bff2d3;
+}
+.pill.featured {
+    background: rgba(74, 58, 16, 0.72);
+    border-color: rgba(244, 197, 107, 0.55);
+    color: #f6d992;
+}
+.pill.adult {
+    background: rgba(90, 30, 30, 0.72);
+    border-color: rgba(224, 87, 79, 0.6);
+    color: #ffceca;
+}
+
+.mod_card_cat {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #e2e8f2;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .mod_card_body {
-    padding: 8px 10px;
+    padding: 11px 13px 13px;
 }
-
 .mod_card_title {
     font-size: 14px;
     font-weight: 600;
@@ -470,20 +701,32 @@ button.danger {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-
 .mod_card_author {
     font-size: 12px;
-    color: grey;
+    color: var(--faint);
+    margin-top: 1px;
 }
-
-.installed_badge {
-    display: inline-block;
-    margin-top: 5px;
+.mod_card_stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 12px;
+}
+.mod_card_stats .stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.mod_card_stats .stat.ver {
+    margin-left: auto;
+    color: var(--faint);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 1px 8px;
+    border-radius: 999px;
     font-size: 11px;
-    background-color: #1f7a3d;
-    color: white;
-    padding: 1px 6px;
-    border-radius: 3px;
 }
 
 .mod_pager {
@@ -491,23 +734,49 @@ button.danger {
     align-items: center;
     justify-content: center;
     gap: 15px;
-    margin-top: 15px;
-    color: #cfcfcf;
-    button {
-        background-color: var(--secondary);
-        padding: 6px 14px;
-        &:disabled {
-            background-color: #474747;
-            cursor: not-allowed;
-        }
-    }
+    margin-top: 22px;
+    color: var(--muted);
 }
 
-/* Detail overlay */
+.mod_message {
+    color: var(--muted);
+    padding: 20px 0;
+}
+.mod_message.error {
+    color: #ec7c74;
+}
+
+/* ---- Empty state ---------------------------------------------------------- */
+.empty_state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+}
+.empty_icon {
+    color: var(--faint);
+    margin-bottom: 14px;
+    opacity: 0.9;
+}
+.empty_title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+}
+.empty_sub {
+    font-size: 13px;
+    color: var(--faint);
+    margin-top: 4px;
+}
+
+/* ---- Detail overlay ------------------------------------------------------- */
 .mod_detail_overlay {
     position: fixed;
     inset: 0;
-    background-color: rgba(0, 0, 0, 0.65);
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(3px);
     display: flex;
     justify-content: center;
     align-items: flex-start;
@@ -515,52 +784,59 @@ button.danger {
     overflow-y: auto;
     z-index: 100;
 }
-
 .mod_detail_panel {
     position: relative;
-    background-color: #171a21;
-    border: 1px solid var(--secondary);
-    border-radius: 8px;
-    padding: 25px;
-    max-width: 720px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 26px;
+    max-width: 740px;
     width: 100%;
-
-    .close {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-    }
+    box-shadow: var(--shadow-lg);
+}
+.mod_detail_panel .close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
 }
 
+.mod_detail_head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin: 0 34px 16px 0;
+}
 .mod_detail_title {
-    margin: 0 30px 5px 0;
+    font-size: 20px;
+    margin: 0 0 5px;
 }
-
 .mod_detail_meta {
-    color: grey;
+    color: var(--faint);
     font-size: 13px;
     margin-bottom: 15px;
 }
 
 .mod_screens {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     overflow-x: auto;
     padding-bottom: 8px;
-    margin-bottom: 15px;
-    img {
-        height: 150px;
-        border-radius: 4px;
-    }
+    margin-bottom: 18px;
+}
+.mod_screens img {
+    height: 160px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
 }
 
 .mod_desc {
-    color: #d8d8d8;
+    color: #cfd6e0;
     font-size: 14px;
-    line-height: 1.5;
-    max-height: 180px;
+    line-height: 1.6;
+    max-height: 200px;
     overflow-y: auto;
-    margin-bottom: 15px;
+    margin-bottom: 18px;
     /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
     white-space: pre-wrap;
 }
@@ -570,70 +846,258 @@ button.danger {
     flex-direction: column;
     gap: 8px;
 }
+.mod_page_link {
+    display: inline-block;
+    margin-top: 16px;
+    color: var(--accent);
+    font-size: 13px;
+}
 
+/* ---- Install rows + progress ---------------------------------------------- */
 .install_row {
     display: flex;
-    flex-direction: row;
     align-items: center;
     gap: 12px;
-    background-color: #1a1d24;
-    border-radius: 5px;
-    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+}
+.install_row .file_info {
+    flex: 1;
+    font-size: 13px;
+    color: var(--muted);
+    word-break: break-all;
+}
+.install_row .progress {
+    flex: 1;
+    height: 8px;
+    background: var(--surface-3);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.install_row .progress .bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
+}
+.install_row .progress_label {
+    font-size: 12px;
+    color: var(--faint);
+    white-space: nowrap;
+}
+.install_row .muted {
+    color: var(--muted);
+    font-size: 13px;
+}
+.install_row .ok {
+    color: var(--good);
+    font-weight: 600;
+}
+.install_row .errline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.install_row .err {
+    color: #ec7c74;
+    font-size: 13px;
+}
 
-    .file_info {
+/* ---- NexusMods specifics -------------------------------------------------- */
+.nexus_userbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 0 16px;
+    color: var(--muted);
+    font-size: 14px;
+}
+.nexus_userbar button {
+    margin-left: auto;
+    padding: 7px 14px;
+}
+.nexus_setup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.nexus_key_row {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+}
+.nexus_key_row input {
+    flex: 1;
+}
+.nexus_feed_toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+.nexus_feed_toggle .nsfw_toggle {
+    margin-left: auto;
+}
+.manual_install {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.manual_btn {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 8px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+.manual_btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.nxm_status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.nxm_paste {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 15px;
+}
+.nxm_paste summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 14px;
+}
+
+/* nxm:// download banner (from the website's Mod Manager button) */
+.nxm_banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 11px 15px;
+    background: var(--good-dim);
+    border: 1px solid #1f7a44;
+    border-radius: var(--radius);
+    font-size: 14px;
+}
+.nxm_banner span {
+    flex: 1;
+}
+
+/* ---- My Mods view --------------------------------------------------------- */
+#my_mods {
+    margin-top: 2px;
+}
+.my_mods_head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.my_mods_title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+.my_mods_title h2 {
+    font-size: 18px;
+}
+.my_mods_title .count {
+    color: var(--faint);
+    font-size: 13px;
+}
+.my_mods_actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+.installed_list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.installed_row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 16px;
+    transition: border-color 0.15s;
+}
+.installed_row:hover {
+    border-color: var(--border-strong);
+}
+.installed_info {
+    flex: 1;
+    min-width: 0;
+}
+.installed_name_line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.installed_name {
+    font-weight: 600;
+    font-size: 15px;
+}
+.installed_meta {
+    color: var(--faint);
+    font-size: 12px;
+    margin-top: 3px;
+}
+.installed_row_actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+/* Below this the sidebar becomes a horizontal bar above the content. */
+@media (max-width: 720px) {
+    .app_shell {
+        flex-direction: column;
+    }
+    .sidebar {
+        position: static;
+        width: 100%;
+        flex-direction: row;
+    }
+    .nav_item {
         flex: 1;
-        font-size: 13px;
-        word-break: break-all;
+        justify-content: center;
     }
-    .progress {
-        flex: 1;
-        height: 8px;
-        background-color: #2a2f3a;
-        border-radius: 4px;
-        overflow: hidden;
-        .bar {
-            height: 100%;
-            background-color: var(--secondary);
-            transition: width 0.2s;
-        }
-    }
-    .progress_label {
-        font-size: 12px;
-        color: grey;
-        white-space: nowrap;
-    }
-    .muted {
-        color: grey;
-        font-size: 13px;
-    }
-    .ok {
-        color: #4fbf6f;
-        font-weight: 600;
-    }
-    .errline {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .err {
-        color: #e06c6c;
-        font-size: 13px;
-    }
-    button {
-        padding: 6px 14px;
-    }
-    button.primary {
-        background-color: var(--primary);
+    .nav_label {
+        flex: 0 1 auto;
     }
 }
 
-.mod_page_link {
-    display: inline-block;
-    margin-top: 15px;
-    color: var(--secondary);
-    text-decoration: none;
-    font-size: 13px;
-    &:hover {
-        text-decoration: underline;
+@media (max-width: 640px) {
+    .mod_search_bar {
+        flex-wrap: wrap;
+    }
+    .nav_item {
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+    .installed_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .installed_row_actions {
+        justify-content: flex-end;
     }
 }

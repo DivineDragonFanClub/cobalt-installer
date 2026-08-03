@@ -45,13 +45,18 @@ enum UpdateSource {
     GameBanana { item_type: String, item_id: u64 },
 }
 
-// A lenient view of an already-installed mod's config, just enough to tell where it came from.
-// GameBanana mods are recognized by their update_sources entry, Nexus mods by an id we set to
-// "nexus.<mod_id>" (Cobalt has no Nexus update-source variant). Unknown fields are ignored.
+// A lenient view of an already-installed mod's config, just enough to tell where it came from and
+// show it in the My Mods list. GameBanana mods are recognized by their update_sources entry, Nexus
+// mods by an id we set to "nexus.<mod_id>" (Cobalt has no Nexus update-source variant). Unknown
+// fields are ignored.
 #[derive(Deserialize, Default)]
 struct InstalledConfig {
     #[serde(default)]
     id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    author: String,
     #[serde(default)]
     update_sources: Vec<UpdateSource>,
 }
@@ -123,6 +128,102 @@ pub fn uninstall_nexus_mod(sd_root: &Path, mod_id: u64) -> bool {
     match installed_nexus_ids(sd_root).get(&mod_id) {
         Some(dir) => std::fs::remove_dir_all(dir).is_ok(),
         None => false,
+    }
+}
+
+// Where an installed mod came from, worked out from its config.yaml. "Manual" covers anything we
+// can't trace back to a source: a hand-dropped folder with no config, or a config we didn't write.
+#[derive(Clone, PartialEq, Debug)]
+pub enum ModSource {
+    GameBanana(u64),
+    Nexus(u64),
+    Manual,
+}
+
+// One entry in the My Mods view: a mod that currently lives in engage/mods, whether we installed it
+// or the user dropped it in by hand.
+#[derive(Clone, PartialEq, Debug)]
+pub struct InstalledMod {
+    // The on-disk name (folder name, or file name for a .zip mod). What we delete/open.
+    pub folder: String,
+    // What to show the user: the config's name if it has one, else the folder name.
+    pub name: String,
+    pub author: Option<String>,
+    pub source: ModSource,
+    // Whether the mod carries a config.yaml at all. Hand-dropped mods often don't.
+    pub has_config: bool,
+    // Full path to the mod folder (or .zip), for opening in the file browser and uninstalling.
+    pub path: PathBuf,
+}
+
+// Read one config's fields into a source tag. Prefer an explicit gamebanana update_source, then fall
+// back to the id prefix we stamp on our own installs.
+fn classify_source(config: &InstalledConfig) -> ModSource {
+    for source in &config.update_sources {
+        if let UpdateSource::GameBanana { item_id, .. } = source {
+            return ModSource::GameBanana(*item_id);
+        }
+    }
+    if let Some(id) = config.id.strip_prefix("gamebanana.").and_then(|n| n.parse().ok()) {
+        ModSource::GameBanana(id)
+    } else if let Some(id) = config.id.strip_prefix("nexus.").and_then(|n| n.parse().ok()) {
+        ModSource::Nexus(id)
+    } else {
+        ModSource::Manual
+    }
+}
+
+// List everything currently installed under engage/mods, config or not. Cobalt loads both folder
+// mods and <Name>.zip mods, so we show both. Sorted by display name so the list is stable.
+pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
+    let mut mods = Vec::new();
+    let Ok(entries) = std::fs::read_dir(mods_dir(sd_root)) else {
+        return mods;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        let is_zip = path.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false);
+        // Skip stray files that aren't a mod folder or a zipped mod.
+        if !is_dir && !is_zip {
+            continue;
+        }
+        let folder = entry.file_name().to_string_lossy().to_string();
+
+        // Only folder mods can carry a config.yaml. A zipped mod is opaque, treat it as manual.
+        let config = is_dir
+            .then(|| std::fs::read_to_string(path.join("config.yaml")).ok())
+            .flatten()
+            .and_then(|text| serde_yaml::from_str::<InstalledConfig>(&text).ok());
+
+        let (name, author, source) = match &config {
+            Some(c) => {
+                let name = if c.name.trim().is_empty() { folder.clone() } else { c.name.clone() };
+                let author = (!c.author.trim().is_empty()).then(|| c.author.clone());
+                (name, author, classify_source(c))
+            }
+            None => (folder.clone(), None, ModSource::Manual),
+        };
+
+        mods.push(InstalledMod {
+            folder,
+            name,
+            author,
+            source,
+            has_config: config.is_some(),
+            path,
+        });
+    }
+    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    mods
+}
+
+// Delete an installed mod by its path (a folder or a .zip). Returns whether it was removed.
+pub fn remove_installed_mod(path: &Path) -> bool {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path).is_ok()
+    } else {
+        std::fs::remove_file(path).is_ok()
     }
 }
 
@@ -562,6 +663,42 @@ mod tests {
             strip_html_display("<div></div><p>only line</p><br><br>"),
             "only line"
         );
+    }
+
+    #[test]
+    fn scan_finds_and_classifies_installed_mods() {
+        // Lay out a fake engage/mods with one GameBanana mod, one Nexus mod, and one hand-dropped
+        // folder with no config, then confirm scan reports all three with the right source.
+        let tmp = std::env::temp_dir().join(format!("cobalt_scan_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mods = mods_dir(&tmp);
+
+        let gb = mods.join("Revival Stone Hell");
+        std::fs::create_dir_all(&gb).unwrap();
+        std::fs::write(
+            gb.join("config.yaml"),
+            "id: gamebanana.446023\nname: Revival Stone Hell\nauthor: Rosado\nupdate_sources:\n- !gamebanana\n  item_type: Mod\n  item_id: 446023\n",
+        )
+        .unwrap();
+
+        let nx = mods.join("Cool Nexus Mod");
+        std::fs::create_dir_all(&nx).unwrap();
+        std::fs::write(nx.join("config.yaml"), "id: nexus.5150\nname: Cool Nexus Mod\nauthor: Someone\n").unwrap();
+
+        // Hand-dropped, no config at all.
+        std::fs::create_dir_all(mods.join("MyHandMod").join("patches")).unwrap();
+
+        let found = scan_installed_mods(&tmp);
+        assert_eq!(found.len(), 3);
+        // Sorted by name: "Cool Nexus Mod", "MyHandMod", "Revival Stone Hell".
+        assert_eq!(found[0].source, ModSource::Nexus(5150));
+        assert_eq!(found[0].author.as_deref(), Some("Someone"));
+        assert_eq!(found[1].name, "MyHandMod");
+        assert_eq!(found[1].source, ModSource::Manual);
+        assert!(!found[1].has_config);
+        assert_eq!(found[2].source, ModSource::GameBanana(446023));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // Real end-to-end run against GameBanana: fetch a mod, download its file, install it into a temp

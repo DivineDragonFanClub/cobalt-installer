@@ -59,6 +59,15 @@ pub struct Submitter {
     pub name: String,
 }
 
+// The mod's top-level category (Skins, Gameplay, ...), shown as a chip on the card.
+#[derive(Deserialize, Clone, PartialEq, Debug)]
+pub struct RootCategory {
+    #[serde(rename = "_sName", default)]
+    pub name: String,
+    #[serde(rename = "_sIconUrl", default)]
+    pub icon_url: String,
+}
+
 // One row in a browse/search page. Browse (Subfeed) records are lighter than search records, so
 // anything that only shows up in one of them is optional.
 #[derive(Deserialize, Clone, PartialEq, Debug)]
@@ -83,6 +92,17 @@ pub struct Listing {
     pub has_content_ratings: bool,
     #[serde(rename = "_bHasFiles", default)]
     pub has_files: bool,
+    // Extra card info: likes, views, category, version. All present on both browse and search rows.
+    #[serde(rename = "_nLikeCount", default)]
+    pub likes: u64,
+    #[serde(rename = "_nViewCount", default)]
+    pub views: u64,
+    #[serde(rename = "_aRootCategory", default)]
+    pub category: Option<RootCategory>,
+    #[serde(rename = "_sVersion", default)]
+    pub version: String,
+    #[serde(rename = "_bWasFeatured", default)]
+    pub featured: bool,
 }
 
 impl Listing {
@@ -92,6 +112,11 @@ impl Listing {
 
     pub fn author(&self) -> String {
         self.submitter.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "Unknown".into())
+    }
+
+    // The category name, if the mod has a non-empty one.
+    pub fn category_name(&self) -> Option<String> {
+        self.category.as_ref().map(|c| c.name.clone()).filter(|n| !n.is_empty())
     }
 }
 
@@ -231,6 +256,20 @@ pub async fn download<F: FnMut(u64, u64)>(url: &str, mut on_progress: F) -> anyh
     }
 
     Ok(buf)
+}
+
+// Short human count for likes/views/downloads: 980, 1.2k, 65.2k, 1.1M. Drops a trailing ".0".
+pub fn format_count(n: u64) -> String {
+    let (val, suffix) = if n >= 1_000_000 {
+        (n as f64 / 1_000_000.0, "M")
+    } else if n >= 1_000 {
+        (n as f64 / 1_000.0, "k")
+    } else {
+        return n.to_string();
+    };
+    let s = format!("{val:.1}");
+    let s = s.strip_suffix(".0").map(String::from).unwrap_or(s);
+    format!("{s}{suffix}")
 }
 
 pub fn format_filesize(bytes: u64) -> String {

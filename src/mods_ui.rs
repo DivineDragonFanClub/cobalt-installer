@@ -142,7 +142,7 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
                         checked: show_nsfw(),
                         onchange: move |e| show_nsfw.set(e.checked()),
                     }
-                    "Show adult content"
+                    "Show sensitive content"
                 }
             }
 
@@ -208,16 +208,44 @@ fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_open: EventHan
     let blur = listing.has_content_ratings && !show_nsfw;
     rsx! {
         div { class: "mod_card", onclick: move |_| on_open.call(()),
-            div { class: if blur { "mod_thumb blurred" } else { "mod_thumb" },
-                if let Some(thumb) = listing.thumb_url() {
-                    img { src: "{thumb}", alt: "{listing.name}" }
+            div { class: "mod_card_media",
+                div { class: if blur { "mod_thumb blurred" } else { "mod_thumb" },
+                    if let Some(thumb) = listing.thumb_url() {
+                        img { src: "{thumb}", alt: "{listing.name}" }
+                    }
+                }
+                // Fades the image into the card body so the text below sits on a soft gradient.
+                div { class: "mod_card_scrim" }
+                div { class: "mod_card_pills",
+                    if installed {
+                        span { class: "pill installed", {crate::icons::check(12)} "Installed" }
+                    }
+                    if listing.featured {
+                        span { class: "pill featured", {crate::icons::star(11)} "Featured" }
+                    }
+                    if listing.has_content_ratings {
+                        span { class: "pill adult", "18+" }
+                    }
+                }
+                if let Some(cat) = listing.category_name() {
+                    span { class: "mod_card_cat", "{cat}" }
                 }
             }
             div { class: "mod_card_body",
                 div { class: "mod_card_title", "{listing.name}" }
                 div { class: "mod_card_author", "by {listing.author()}" }
-                if installed {
-                    span { class: "installed_badge", "Installed" }
+                div { class: "mod_card_stats",
+                    span { class: "stat", title: "Likes",
+                        {crate::icons::heart(13)}
+                        "{gamebanana::format_count(listing.likes)}"
+                    }
+                    span { class: "stat", title: "Views",
+                        {crate::icons::eye(13)}
+                        "{gamebanana::format_count(listing.views)}"
+                    }
+                    if !listing.version.is_empty() {
+                        span { class: "stat ver", "v{listing.version}" }
+                    }
                 }
             }
         }

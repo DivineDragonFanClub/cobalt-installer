@@ -175,7 +175,7 @@ fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
                     checked: show_nsfw(),
                     onchange: move |e| show_nsfw.set(e.checked()),
                 }
-                "Show adult content"
+                "Show sensitive content"
             }
         }
 
@@ -231,16 +231,29 @@ fn NexusCard(m: NexusMod, installed: bool, show_nsfw: bool, on_open: EventHandle
     let blur = m.contains_adult_content && !show_nsfw;
     rsx! {
         div { class: "mod_card", onclick: move |_| on_open.call(()),
-            div { class: if blur { "mod_thumb blurred" } else { "mod_thumb" },
-                if let Some(pic) = &m.picture_url {
-                    img { src: "{pic}", alt: "{m.name}" }
+            div { class: "mod_card_media",
+                div { class: if blur { "mod_thumb blurred" } else { "mod_thumb" },
+                    if let Some(pic) = &m.picture_url {
+                        img { src: "{pic}", alt: "{m.name}" }
+                    }
+                }
+                div { class: "mod_card_scrim" }
+                div { class: "mod_card_pills",
+                    if installed {
+                        span { class: "pill installed", {crate::icons::check(12)} "Installed" }
+                    }
+                    if m.contains_adult_content {
+                        span { class: "pill adult", "18+" }
+                    }
                 }
             }
             div { class: "mod_card_body",
                 div { class: "mod_card_title", "{m.name}" }
                 div { class: "mod_card_author", "by {m.author()}" }
-                if installed {
-                    span { class: "installed_badge", "Installed" }
+                div { class: "mod_card_stats",
+                    if !m.version.is_empty() {
+                        span { class: "stat ver", "v{m.version}" }
+                    }
                 }
             }
         }

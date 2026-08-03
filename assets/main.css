@@ -1153,7 +1153,7 @@ input:focus {
 }
 .installed_row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 14px;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -1183,10 +1183,24 @@ input:focus {
     font-size: 12px;
     margin-top: 3px;
 }
+.installed_desc {
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+    /* keep long descriptions to two lines so rows stay tidy */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 .installed_row_actions {
     display: flex;
     gap: 8px;
     flex-shrink: 0;
+    /* keep the buttons vertically centered against the first line of text */
+    align-items: center;
+    padding-top: 2px;
 }
 
 /* ---- Responsive ----------------------------------------------------------- */

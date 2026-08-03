@@ -21,8 +21,17 @@ enum Source {
 }
 
 #[component]
-pub fn ModBrowser(sd_root: PathBuf) -> Element {
+pub fn ModBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
     let mut source = use_signal(|| Source::GameBanana);
+
+    // A "view this mod" request from My Mods: flip to the matching source so the right child browser
+    // is mounted. That child then consumes the request and opens the mod's detail overlay.
+    use_effect(move || match view_request() {
+        Some(install::ModSource::GameBanana(_)) => source.set(Source::GameBanana),
+        Some(install::ModSource::Nexus(_)) => source.set(Source::Nexus),
+        _ => {}
+    });
+
     rsx! {
         div { class: "source_toggle",
             button {
@@ -37,18 +46,27 @@ pub fn ModBrowser(sd_root: PathBuf) -> Element {
             }
         }
         match source() {
-            Source::GameBanana => rsx! { GameBananaBrowser { sd_root: sd_root.clone() } },
-            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { sd_root: sd_root.clone() } },
+            Source::GameBanana => rsx! { GameBananaBrowser { sd_root: sd_root.clone(), view_request } },
+            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { sd_root: sd_root.clone(), view_request } },
         }
     }
 }
 
 #[component]
-fn GameBananaBrowser(sd_root: PathBuf) -> Element {
+fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
     let mut query = use_signal(String::new);
     let mut category = use_signal(|| None::<u64>);
     let mut show_nsfw = use_signal(|| false);
     let mut selected = use_signal(|| None::<u64>);
+
+    // Opened here from My Mods "View": drop the detail overlay straight onto this mod id (it fetches
+    // its own data, so the mod doesn't need to be in the current results), then clear the request.
+    use_effect(move || {
+        if let Some(install::ModSource::GameBanana(id)) = view_request() {
+            selected.set(Some(id));
+            view_request.set(None);
+        }
+    });
 
     // The results we've loaded so far (grows as the user hits "Load more").
     let mut results = use_signal(Vec::<Listing>::new);

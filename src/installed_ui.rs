@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 use crate::install::{self, InstalledMod, ModSource};
 
 #[component]
-pub fn MyMods(sd_root: PathBuf) -> Element {
+pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
     // Scan once on mount, then re-scan whenever we change something (uninstall) or the user asks.
     let scan_root = sd_root.clone();
     let mut mods = use_signal(move || install::scan_installed_mods(&scan_root));
@@ -46,7 +46,7 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
             } else {
                 div { class: "installed_list",
                     for m in mods() {
-                        InstalledRow { key: "{m.folder}", entry: m.clone(), sd_root: sd_root.clone(), mods }
+                        InstalledRow { key: "{m.folder}", entry: m.clone(), sd_root: sd_root.clone(), mods, on_view }
                     }
                 }
             }
@@ -63,8 +63,14 @@ fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
     }
 }
 
+
 #[component]
-fn InstalledRow(entry: InstalledMod, sd_root: PathBuf, mods: Signal<Vec<InstalledMod>>) -> Element {
+fn InstalledRow(
+    entry: InstalledMod,
+    sd_root: PathBuf,
+    mods: Signal<Vec<InstalledMod>>,
+    on_view: EventHandler<ModSource>,
+) -> Element {
     // Uninstall is destructive, so the button asks for a second click to confirm.
     let mut confirming = use_signal(|| false);
     let (chip_label, chip_class) = source_chip(&entry.source);
@@ -101,10 +107,26 @@ fn InstalledRow(entry: InstalledMod, sd_root: PathBuf, mods: Signal<Vec<Installe
                     if let Some(author) = entry.author.clone() {
                         "by {author} · "
                     }
+                    if entry.size_bytes > 0 {
+                        "{crate::gamebanana::format_filesize(entry.size_bytes)} · "
+                    }
                     code { "{entry.folder}" }
+                }
+                if let Some(desc) = entry.description.clone() {
+                    p { class: "installed_desc", "{desc}" }
                 }
             }
             div { class: "installed_row_actions",
+                if !matches!(entry.source, ModSource::Manual) {
+                    button {
+                        class: "ghost",
+                        onclick: {
+                            let src = entry.source.clone();
+                            move |_| on_view.call(src.clone())
+                        },
+                        "View"
+                    }
+                }
                 button { class: "ghost", onclick: open_entry, "Open" }
                 if confirming() {
                     button { class: "danger", onclick: do_uninstall, "Confirm remove" }

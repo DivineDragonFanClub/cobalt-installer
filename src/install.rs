@@ -28,6 +28,8 @@ struct ModConfig {
     dependencies: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     optional_dependencies: Vec<String>,
+    // A link to the mod's source code (for plugins), NOT its download/mod page. Where the mod came
+    // from and how to update it is recorded in update_sources.
     #[serde(skip_serializing_if = "Option::is_none")]
     source_url: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -57,6 +59,8 @@ struct InstalledConfig {
     name: String,
     #[serde(default)]
     author: String,
+    #[serde(default)]
+    description: String,
     #[serde(default)]
     update_sources: Vec<UpdateSource>,
 }
@@ -149,7 +153,11 @@ pub struct InstalledMod {
     // What to show the user: the config's name if it has one, else the folder name.
     pub name: String,
     pub author: Option<String>,
+    // The config's description, if it has one.
+    pub description: Option<String>,
     pub source: ModSource,
+    // Total size on disk (folder contents, or the .zip file's size).
+    pub size_bytes: u64,
     // Whether the mod carries a config.yaml at all. Hand-dropped mods often don't.
     pub has_config: bool,
     // Full path to the mod folder (or .zip), for opening in the file browser and uninstalling.
@@ -196,26 +204,52 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             .flatten()
             .and_then(|text| serde_yaml::from_str::<InstalledConfig>(&text).ok());
 
-        let (name, author, source) = match &config {
+        let (name, author, description, source) = match &config {
             Some(c) => {
                 let name = if c.name.trim().is_empty() { folder.clone() } else { c.name.clone() };
                 let author = (!c.author.trim().is_empty()).then(|| c.author.clone());
-                (name, author, classify_source(c))
+                let description = (!c.description.trim().is_empty()).then(|| c.description.clone());
+                (name, author, description, classify_source(c))
             }
-            None => (folder.clone(), None, ModSource::Manual),
+            None => (folder.clone(), None, None, ModSource::Manual),
+        };
+
+        let size_bytes = if is_dir {
+            dir_size(&path)
+        } else {
+            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
         };
 
         mods.push(InstalledMod {
             folder,
             name,
             author,
+            description,
             source,
+            size_bytes,
             has_config: config.is_some(),
             path,
         });
     }
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     mods
+}
+
+// Total size of everything under a folder, walked recursively.
+fn dir_size(path: &Path) -> u64 {
+    let mut total = 0;
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            total += dir_size(&p);
+        } else if let Ok(meta) = entry.metadata() {
+            total += meta.len();
+        }
+    }
+    total
 }
 
 // Delete an installed mod by its path (a folder or a .zip). Returns whether it was removed.
@@ -336,7 +370,9 @@ pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) 
             author: detail.author(),
             dependencies: Vec::new(),
             optional_dependencies: Vec::new(),
-            source_url: (!detail.profile_url.is_empty()).then(|| detail.profile_url.clone()),
+            // source_url is for a plugin's source code, not the mod page. The GameBanana origin (and
+            // the link back to its download page) lives in update_sources instead.
+            source_url: None,
             update_sources: vec![UpdateSource::GameBanana {
                 item_type: "Mod".into(),
                 item_id: detail.id,
@@ -683,7 +719,11 @@ mod tests {
 
         let nx = mods.join("Cool Nexus Mod");
         std::fs::create_dir_all(&nx).unwrap();
-        std::fs::write(nx.join("config.yaml"), "id: nexus.5150\nname: Cool Nexus Mod\nauthor: Someone\n").unwrap();
+        std::fs::write(
+            nx.join("config.yaml"),
+            "id: nexus.5150\nname: Cool Nexus Mod\nauthor: Someone\ndescription: A cool mod\n",
+        )
+        .unwrap();
 
         // Hand-dropped, no config at all.
         std::fs::create_dir_all(mods.join("MyHandMod").join("patches")).unwrap();
@@ -693,9 +733,13 @@ mod tests {
         // Sorted by name: "Cool Nexus Mod", "MyHandMod", "Revival Stone Hell".
         assert_eq!(found[0].source, ModSource::Nexus(5150));
         assert_eq!(found[0].author.as_deref(), Some("Someone"));
+        assert_eq!(found[0].description.as_deref(), Some("A cool mod"));
+        // The config file has bytes, so the mod reports a non-zero size.
+        assert!(found[0].size_bytes > 0);
         assert_eq!(found[1].name, "MyHandMod");
         assert_eq!(found[1].source, ModSource::Manual);
         assert!(!found[1].has_config);
+        assert_eq!(found[1].description, None);
         assert_eq!(found[2].source, ModSource::GameBanana(446023));
 
         let _ = std::fs::remove_dir_all(&tmp);

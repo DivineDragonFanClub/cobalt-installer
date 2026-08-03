@@ -254,6 +254,7 @@ pub(crate) fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     Command::new(cmd).arg(path.as_ref()).spawn()
 }
 
+
 #[cfg(feature = "desktop")]
 fn construct_bad_subsdk9_path(emulator: &Emulator) -> Option<PathBuf> {
     emulator.data_path().map(|base| {
@@ -422,6 +423,9 @@ fn Body(status_message: Signal<String>) -> Element {
     let mut active_tab = use_signal(|| Tab::Install);
     // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
     let mut nxm_status = use_signal(|| None::<String>);
+    // Set when the user clicks "View" on a mod in My Mods: the Browse tab picks it up, switches to
+    // the right source, and opens that mod's detail overlay in-app.
+    let mut view_request = use_signal(|| None::<install::ModSource>);
 
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
@@ -513,14 +517,20 @@ fn Body(status_message: Signal<String>) -> Element {
                     },
                     Tab::Browse => rsx! {
                         if let Some(root) = sd_root.clone() {
-                            mods_ui::ModBrowser { sd_root: root }
+                            mods_ui::ModBrowser { sd_root: root, view_request }
                         } else {
                             div { class: "mod_message", "Pick an install target on the Install tab first." }
                         }
                     },
                     Tab::MyMods => rsx! {
                         if let Some(root) = sd_root.clone() {
-                            installed_ui::MyMods { sd_root: root }
+                            installed_ui::MyMods {
+                                sd_root: root,
+                                on_view: move |src| {
+                                    view_request.set(Some(src));
+                                    active_tab.set(Tab::Browse);
+                                },
+                            }
                         } else {
                             div { class: "mod_message", "Pick an install target on the Install tab first." }
                         }

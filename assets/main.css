@@ -458,6 +458,29 @@ button.close:hover:enabled {
     margin-top: 10px;
     flex-wrap: wrap;
 }
+.volume_select {
+    width: auto;
+    max-width: 220px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+/* FTP console target: host + port + test button on one row. */
+.ftp_fields {
+    margin-top: 10px;
+}
+.ftp_row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.ftp_row .field_input {
+    max-width: 260px;
+}
+.ftp_row .field_input.port {
+    width: 80px;
+}
 .pick_btn {
     display: inline-block;
     padding: 8px 14px;

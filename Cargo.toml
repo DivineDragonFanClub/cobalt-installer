@@ -27,7 +27,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 futures-util = "0.3"
+# oneshot channel to await a blocking FTP upload that runs on its own thread (keeps the UI live).
+futures-channel = "0.3"
 anyhow = "1"
+# Plain FTP client for installing straight to a modded console (sys-ftpd, anonymous:5000). No TLS
+# feature, the console's FTP is unencrypted on the LAN. The blocking client runs on its own thread.
+suppaftp = "6"
+# Just for enumerating removable drives (SD card / USB) in the volume picker. Only the disk feature.
+sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
 
 # Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
 # `futures-timer` gives us an await-able delay for polling the folder grant.

@@ -33,6 +33,8 @@ use dioxus_sdk::storage::*;
 // The GameBanana mod browser (browse/search, install, config.yaml generation) is desktop only for
 // now. It's split into modules to keep main.rs readable, the Android build never pulls it in.
 #[cfg(feature = "desktop")]
+mod ftp;
+#[cfg(feature = "desktop")]
 mod gamebanana;
 #[cfg(feature = "desktop")]
 mod icons;
@@ -53,7 +55,9 @@ mod nexus_ui;
 #[cfg(feature = "desktop")]
 struct Emulator {
     name: &'static str,
-    linux_data_path: &'static str,
+    // Linux can install an emulator a few different ways (native config dir, Flatpak sandbox), so
+    // each gets a list of candidate data dirs. We use the first that exists.
+    linux_data_paths: &'static [&'static str],
     macos_data_path: &'static str,
     windows_data_folder: &'static str,
     sd_card_folder: &'static str,
@@ -65,7 +69,16 @@ impl Emulator {
         match std::env::consts::OS {
             "macos" => home_dir().map(|h| h.join(self.macos_data_path)),
             "windows" => std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join(self.windows_data_folder)),
-            "linux" => home_dir().map(|h| h.join(self.linux_data_path)),
+            "linux" => {
+                let home = home_dir()?;
+                let candidates: Vec<PathBuf> = self.linux_data_paths.iter().map(|p| home.join(p)).collect();
+                // Prefer a layout that's actually there, else fall back to the first as the target.
+                candidates
+                    .iter()
+                    .find(|p| p.exists())
+                    .cloned()
+                    .or_else(|| candidates.into_iter().next())
+            }
             other => todo!("Unsupported platform: {other}"),
         }
     }
@@ -83,21 +96,22 @@ impl Emulator {
 static EMULATORS: &[Emulator] = &[
     Emulator {
         name: "Ryujinx",
-        linux_data_path: ".config/Ryujinx",
+        // Native config dir, then the Flatpak sandbox path (both from divine-builder's autodetect).
+        linux_data_paths: &[".config/Ryujinx", ".var/app/org.ryujinx.Ryujinx/config/Ryujinx"],
         macos_data_path: "Library/Application Support/Ryujinx",
         windows_data_folder: "Ryujinx",
         sd_card_folder: "sdcard",
     },
     Emulator {
         name: "Citron",
-        linux_data_path: ".local/share/citron", // I got this from the docs https://citron-emu.org/docs/installation
+        linux_data_paths: &[".local/share/citron"], // from the docs https://citron-emu.org/docs/installation
         macos_data_path: ".local/share/citron",
         windows_data_folder: "citron",
         sd_card_folder: "sdmc",
     },
     Emulator {
         name: "Eden",
-        linux_data_path: ".local/share/eden", // Assuming based on how Eden has the same structure as Citron, it's not mentioned in the docs.
+        linux_data_paths: &[".local/share/eden"], // Assuming based on how Eden has the same structure as Citron, it's not mentioned in the docs.
         macos_data_path: ".local/share/eden",
         windows_data_folder: "eden",
         sd_card_folder: "sdmc",
@@ -122,6 +136,22 @@ fn resolve_sd_root(installation_type: &str, sdcard: &str) -> Option<std::path::P
     } else {
         get_emulator(installation_type).and_then(|e| e.sd_card_path())
     }
+}
+
+// Removable drives only (SD card / USB), where a real console's SD shows up. Used by the SD card
+// picker so the user can pick a plugged-in card instead of hunting for it with Browse. We rely on
+// the OS "removable" flag so internal/system drives never show up in the list.
+#[cfg(feature = "desktop")]
+fn mounted_volumes() -> Vec<PathBuf> {
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let mut vols: Vec<PathBuf> = disks
+        .iter()
+        .filter(|d| d.is_removable())
+        .map(|d| d.mount_point().to_path_buf())
+        .collect();
+    vols.sort();
+    vols.dedup();
+    vols
 }
 
 // Is Cobalt actually installed at this SD root? release.zip lays down engage/cobalt (Cobalt's own
@@ -322,6 +352,70 @@ async fn create_mods_directory(sdcard_path: PathBuf) {
         std::fs::create_dir_all(mods_path).unwrap();
     } else {
         tracing::info!("Mods directory already exists");
+    }
+}
+
+// Build an FTP config from the stored host/port. sys-ftpd is anonymous:5000, so we start from that
+// default and just override the port if the user set a different one.
+#[cfg(feature = "desktop")]
+fn ftp_config(host: &str, port: &str) -> ftp::FtpConfig {
+    let mut config = ftp::FtpConfig::sys_ftpd(host.trim());
+    if let Ok(p) = port.trim().parse() {
+        config.port = p;
+    }
+    config
+}
+
+// Connect to the console just to confirm it's reachable, reporting the result in the status line.
+// The blocking connect runs on its own thread so the UI doesn't freeze while it waits.
+#[cfg(feature = "desktop")]
+async fn test_ftp(config: ftp::FtpConfig, mut status: Signal<String>) {
+    status.set("Testing connection…".to_string());
+    let (tx, rx) = futures_channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(ftp::test_connection(&config));
+    });
+    match rx.await {
+        Ok(Ok(())) => status.set("Connected to the console.".to_string()),
+        Ok(Err(e)) => status.set(format!("Couldn't connect: {e}")),
+        Err(_) => status.set("The connection test was interrupted.".to_string()),
+    }
+}
+
+// Install/update Cobalt onto a console over FTP. Download the release, extract it into a temp
+// staging folder (reusing the same extract path as a local install), then upload that whole tree to
+// the SD root over FTP. The blocking upload runs on a background thread; we await its result.
+#[cfg(feature = "desktop")]
+async fn install_cobalt_ftp(config: ftp::FtpConfig, mut status: Signal<String>) {
+    status.set("Downloading release".to_string());
+    let bytes = match download_release().await.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            status.set(format!("Download failed: {e}"));
+            return;
+        }
+    };
+
+    status.set("Preparing files".to_string());
+    let staging = std::env::temp_dir().join(format!("cobalt_ftp_stage_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    extract_release(&bytes, staging.clone()).await;
+    create_mods_directory(staging.clone()).await;
+
+    status.set("Uploading to the console…".to_string());
+    let (tx, rx) = futures_channel::oneshot::channel();
+    let staging_for_thread = staging.clone();
+    std::thread::spawn(move || {
+        // Upload the staged tree to the SD root ("/"), then clean up the temp folder.
+        let res = ftp::upload_tree(&config, &staging_for_thread, "/", |_, _| {});
+        let _ = std::fs::remove_dir_all(&staging_for_thread);
+        let _ = tx.send(res);
+    });
+
+    match rx.await {
+        Ok(Ok(())) => status.set("Installed to the console!".to_string()),
+        Ok(Err(e)) => status.set(format!("FTP upload failed: {e}")),
+        Err(_) => status.set("The upload was interrupted.".to_string()),
     }
 }
 
@@ -666,8 +760,16 @@ fn Controls(
     mut installation_type: Signal<String>,
     user_selected_sdcard_path: Signal<String>,
 ) -> Element {
+    // FTP console target: host + port persist across launches, defaulting to sys-ftpd's port.
+    let mut ftp_host = use_storage::<LocalStorage, String>("ftp_host".into(), String::new);
+    let mut ftp_port = use_storage::<LocalStorage, String>("ftp_port".into(), || "5000".to_string());
+
+    let is_ftp = installation_type() == "FTP";
+
     let is_install_ready = {
-        if installation_type() == "SD Card" {
+        if is_ftp {
+            !ftp_host().trim().is_empty()
+        } else if installation_type() == "SD Card" {
             !user_selected_sdcard_path().is_empty()
         } else if let Some(emulator) = get_emulator(&installation_type()) {
             emulator.is_installed()
@@ -691,6 +793,12 @@ fn Controls(
     });
 
     let install_cobalt = move |_| async move {
+        // FTP delivers over the network to a console instead of a local folder.
+        if installation_type() == "FTP" {
+            install_cobalt_ftp(ftp_config(&ftp_host(), &ftp_port()), status_message).await;
+            return;
+        }
+
         tracing::info!("Extracting release to {:?}", cobalt_mod_path);
 
         if let Some(emulator) = get_emulator(&installation_type()) {
@@ -728,8 +836,39 @@ fn Controls(
                         option { label: "{emu.name}", value: "{emu.name}" }
                     }
                     option { label: "SD card", value: "SD Card" }
+                    option { label: "Console over FTP", value: "FTP" }
                 }
-                if installation_type() == "SD Card" {
+                if is_ftp {
+                    div { class: "ftp_fields",
+                        div { class: "ftp_row",
+                            input {
+                                class: "field_input",
+                                r#type: "text",
+                                placeholder: "Console IP (e.g. 192.168.1.42)",
+                                value: "{ftp_host}",
+                                oninput: move |e| ftp_host.set(e.value()),
+                            }
+                            input {
+                                class: "field_input port",
+                                r#type: "text",
+                                placeholder: "Port",
+                                value: "{ftp_port}",
+                                oninput: move |e| ftp_port.set(e.value()),
+                            }
+                            button {
+                                class: "secondary",
+                                disabled: ftp_host().trim().is_empty(),
+                                onclick: move |_| async move {
+                                    test_ftp(ftp_config(&ftp_host(), &ftp_port()), status_message).await;
+                                },
+                                "Test connection"
+                            }
+                        }
+                        p { class: "field_hint",
+                            "Your console needs an FTP server running (sys-ftpd: anonymous, port 5000). Install writes straight to its SD card over the network."
+                        }
+                    }
+                } else if installation_type() == "SD Card" {
                     SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
                 } else if get_emulator(&installation_type()).is_some() {
                     EmulatorMessageZone { emulator_name: installation_type() }
@@ -744,14 +883,16 @@ fn Controls(
                     disabled: !is_install_ready,
                     "Install Cobalt"
                 }
-                button {
-                    id: "open_mods_folder_button",
-                    class: "secondary",
-                    disabled: !does_engage_mods_folder_exist(cobalt_mod_path()),
-                    onclick: move |_| {
-                        open_engage_mods_folder(cobalt_mod_path());
-                    },
-                    "Open mods folder"
+                if !is_ftp {
+                    button {
+                        id: "open_mods_folder_button",
+                        class: "secondary",
+                        disabled: !does_engage_mods_folder_exist(cobalt_mod_path()),
+                        onclick: move |_| {
+                            open_engage_mods_folder(cobalt_mod_path());
+                        },
+                        "Open mods folder"
+                    }
                 }
             }
             if status_message() != "Waiting for you" {
@@ -884,6 +1025,7 @@ pub fn EmulatorMessageZone(emulator_name: String) -> Element {
 #[cfg(feature = "desktop")]
 #[component]
 pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
+    let volumes = mounted_volumes();
     rsx! {
         div { id: "sd_select_button_container", class: "file_pick",
             label { id: "sd_select_label", class: "pick_btn", r#for: "sd_select", "Choose folder…" }
@@ -901,6 +1043,26 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                         selected_sdcard_path.set(dir);
                     }
                 },
+            }
+            // Quick-pick a plugged-in SD/USB volume instead of browsing for it.
+            if !volumes.is_empty() {
+                select {
+                    class: "field_input volume_select",
+                    value: "",
+                    onchange: move |e| {
+                        let v = e.value();
+                        if !v.is_empty() {
+                            selected_sdcard_path.set(v);
+                        }
+                    },
+                    option { value: "", "Pick a volume…" }
+                    for vol in volumes {
+                        option {
+                            value: "{vol.display()}",
+                            {vol.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| vol.display().to_string())}
+                        }
+                    }
+                }
             }
             if selected_sdcard_path().is_empty() {
                 span { class: "pick_path muted", "No folder selected" }

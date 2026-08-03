@@ -561,6 +561,8 @@ button.danger {
     max-height: 180px;
     overflow-y: auto;
     margin-bottom: 15px;
+    /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
+    white-space: pre-wrap;
 }
 
 .mod_files {

@@ -215,6 +215,7 @@ fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
 
         if let Some(m) = selected() {
             NexusDetailPanel {
+                key: "{m.mod_id}",
                 info: m.clone(),
                 apikey: apikey.clone(),
                 sd_root: sd_root.clone(),

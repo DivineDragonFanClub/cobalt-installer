@@ -182,6 +182,7 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
 
         if let Some(id) = selected() {
             ModDetailPanel {
+                key: "{id}",
                 mod_id: id,
                 sd_root: sd_root.clone(),
                 installed,
@@ -257,7 +258,7 @@ fn ModDetailPanel(
 
 #[component]
 fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
-    let description = install::strip_html(&detail.description_html);
+    let description = install::strip_html_display(&detail.description_html);
     let is_installed = installed().contains(&detail.id);
     rsx! {
         div { class: "mod_detail_head",

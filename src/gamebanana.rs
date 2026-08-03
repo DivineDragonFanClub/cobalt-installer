@@ -65,6 +65,11 @@ pub struct Submitter {
 pub struct Listing {
     #[serde(rename = "_idRow")]
     pub id: u64,
+    // The submission type. GameBanana's game feed mixes in Requests/Questions/WiPs whose ids live in
+    // a different id-space, so we keep only "Mod" (see mods_only). Fetching Mod/<id> for a non-Mod id
+    // would silently open an unrelated mod from another game.
+    #[serde(rename = "_sModelName", default)]
+    pub model: String,
     #[serde(rename = "_sName")]
     pub name: String,
     #[serde(rename = "_sProfileUrl", default)]
@@ -154,11 +159,25 @@ struct Page {
     records: Vec<Listing>,
 }
 
-// Browse the newest mods for the game, one page at a time (15 per page).
+// GET a page of records and keep only actual mods. The `default`ed model on records from the search
+// endpoint comes back empty, and those are already mods, so we treat empty as "Mod".
+async fn fetch_listings(url: &str) -> anyhow::Result<Vec<Listing>> {
+    let page: Page = CLIENT.get(url).send().await?.error_for_status()?.json().await?;
+    Ok(page
+        .records
+        .into_iter()
+        .filter(|l| l.model.is_empty() || l.model == "Mod")
+        .collect())
+}
+
+// Browse the newest mods for the game, one page at a time (15 per page). Uses Mod/Index, not the
+// game Subfeed, because the Subfeed also lists Requests/Questions/WiPs whose ids would open the
+// wrong thing in the detail view.
 pub async fn browse(page: u32) -> anyhow::Result<Vec<Listing>> {
-    let url = format!("https://gamebanana.com/apiv11/Game/{GAME_ID}/Subfeed?_nPage={page}");
-    let page: Page = CLIENT.get(&url).send().await?.error_for_status()?.json().await?;
-    Ok(page.records)
+    let url = format!(
+        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}"
+    );
+    fetch_listings(&url).await
 }
 
 // Search mods by text. GameBanana wants at least a couple characters to return anything useful.
@@ -167,8 +186,7 @@ pub async fn search(query: &str, page: u32) -> anyhow::Result<Vec<Listing>> {
     let url = format!(
         "https://gamebanana.com/apiv11/Util/Search/Results?_sSearchString={q}&_nPerpage=15&_nPage={page}&_idGameRow={GAME_ID}&_sModelName=Mod"
     );
-    let page: Page = CLIENT.get(&url).send().await?.error_for_status()?.json().await?;
-    Ok(page.records)
+    fetch_listings(&url).await
 }
 
 // The game's top-level mod categories, for the filter dropdown.
@@ -184,8 +202,7 @@ pub async fn by_category(category_id: u64, page: u32) -> anyhow::Result<Vec<List
     let url = format!(
         "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}&_aFilters%5BGeneric_Category%5D={category_id}"
     );
-    let page: Page = CLIENT.get(&url).send().await?.error_for_status()?.json().await?;
-    Ok(page.records)
+    fetch_listings(&url).await
 }
 
 // Fetch one mod's full page.

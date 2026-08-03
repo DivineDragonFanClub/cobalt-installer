@@ -344,8 +344,18 @@ fn sanitize(name: &str) -> String {
     }
 }
 
-// Strip HTML tags and decode the handful of entities GameBanana descriptions actually use, then
-// collapse whitespace. Good enough for a plain-text description in a config file, no HTML parser.
+// Decode the handful of HTML entities GameBanana/Nexus descriptions actually use.
+fn decode_entities(text: &str) -> String {
+    text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&nbsp;", " ")
+}
+
+// Strip HTML tags and decode entities, then collapse ALL whitespace into single spaces so the
+// result is one flat line. This is what goes into config.yaml, no HTML parser.
 pub(crate) fn strip_html(html: &str) -> String {
     let mut text = String::with_capacity(html.len());
     let mut in_tag = false;
@@ -357,15 +367,84 @@ pub(crate) fn strip_html(html: &str) -> String {
             _ => {}
         }
     }
-    let text = text
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#039;", "'")
-        .replace("&nbsp;", " ");
-    // Collapse runs of whitespace into single spaces.
+    let text = decode_entities(&text);
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// Same idea as strip_html but keeps the paragraph structure for on-screen display: block tags
+// (<br>, </p>, </div>, list items, headings) become line breaks so the description doesn't render
+// as one giant wall of text. Horizontal whitespace inside a line is still collapsed, and we cap
+// runs of blank lines at one so the spacing stays tidy.
+pub(crate) fn strip_html_display(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut tag = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                tag.clear();
+            }
+            '>' => {
+                in_tag = false;
+                // Pull the tag name (drop a leading slash and anything after a space or slash).
+                let closing = tag.starts_with('/');
+                let name = tag
+                    .trim_start_matches('/')
+                    .split(|ch: char| ch.is_whitespace() || ch == '/')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                // <br> breaks the line, and so does the end of any block-level element.
+                let breaks = name == "br"
+                    || (closing
+                        && matches!(
+                            name.as_str(),
+                            "p" | "div"
+                                | "li"
+                                | "ul"
+                                | "ol"
+                                | "tr"
+                                | "h1"
+                                | "h2"
+                                | "h3"
+                                | "h4"
+                                | "h5"
+                                | "h6"
+                                | "blockquote"
+                                | "section"
+                                | "header"
+                        ));
+                if breaks {
+                    text.push('\n');
+                }
+            }
+            _ if in_tag => tag.push(c),
+            _ => text.push(c),
+        }
+    }
+    let text = decode_entities(&text);
+
+    // Collapse horizontal whitespace on each line, then drop leading/trailing blank lines and
+    // squash any run of blank lines down to a single separator.
+    let mut lines: Vec<String> = Vec::new();
+    let mut blank_run = false;
+    for line in text.split('\n') {
+        let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if line.is_empty() {
+            // Only keep one blank line, and never one at the very start.
+            if !lines.is_empty() {
+                blank_run = true;
+            }
+        } else {
+            if blank_run {
+                lines.push(String::new());
+            }
+            blank_run = false;
+            lines.push(line);
+        }
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -457,6 +536,31 @@ mod tests {
         assert_eq!(
             strip_html("<p>Hello &amp; <b>welcome</b></p>"),
             "Hello & welcome"
+        );
+        // The flat version has no line breaks, block boundaries just disappear.
+        assert_eq!(strip_html("<p>one</p> <p>two</p>"), "one two");
+    }
+
+    #[test]
+    fn strip_html_display_keeps_breaks() {
+        // Paragraphs and <br> become newlines instead of being flattened to spaces.
+        assert_eq!(
+            strip_html_display("<p>First para.</p><p>Second para.</p>"),
+            "First para.\nSecond para."
+        );
+        assert_eq!(
+            strip_html_display("Line one<br>Line two<br/>Line three"),
+            "Line one\nLine two\nLine three"
+        );
+        // Inline tags don't break, horizontal whitespace still collapses.
+        assert_eq!(
+            strip_html_display("<p>Hello &amp;   <b>welcome</b></p>"),
+            "Hello & welcome"
+        );
+        // Runs of empty block tags don't pile up blank lines, and none leads.
+        assert_eq!(
+            strip_html_display("<div></div><p>only line</p><br><br>"),
+            "only line"
         );
     }
 

@@ -65,15 +65,6 @@ body {
     overscroll-behavior: none;
 }
 
-/* The page gradient lives on a fixed layer so it paints once instead of repainting every scroll
-   frame (background-attachment: fixed forces a full-gradient repaint on each frame in WebKit). */
-body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background: radial-gradient(1200px 500px at 50% -200px, #16203a 0%, var(--bg) 60%);
-}
 
 h1, h2, h3 {
     margin: 0;
@@ -158,11 +149,9 @@ a:hover {
     flex-direction: column;
 }
 .app_header_text h1 {
-    font-size: 22px;
-    background: linear-gradient(90deg, #eaf1ff, #9dc0ff);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
 }
 .app_tagline {
     margin: 2px 0 0;
@@ -345,7 +334,6 @@ button.close:hover:enabled {
 .nav_item.active {
     background: var(--accent);
     color: #fff;
-    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
 }
 /* Keep the active item looking active on hover instead of falling back to the grey hover. */
 .nav_item.active:hover:enabled {
@@ -394,7 +382,7 @@ button.close:hover:enabled {
     max-width: 560px;
 }
 .onboard_card h2 {
-    font-size: 22px;
+    font-size: 18px;
 }
 .onboard_sub {
     color: var(--muted);
@@ -406,6 +394,8 @@ button.close:hover:enabled {
     flex-direction: column;
     gap: 12px;
     align-items: flex-start;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
 }
 .onboard_status {
     display: flex;
@@ -419,42 +409,95 @@ button.close:hover:enabled {
     font-weight: 600;
 }
 
-/* ---- Install controls (message zones) ------------------------------------- */
-#installation_type_container {
-    display: flex;
-    flex-direction: column;
-}
-
-.message_zone {
+/* ---- Panels + form fields (Install, onboarding) --------------------------- */
+.panel {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--tertiary);
-    border-radius: var(--radius);
-    padding: 18px 20px;
-    margin-bottom: 12px;
+    border-radius: 12px;
+    padding: 22px 24px;
 }
-.message_zone.first {
-    border-left-color: var(--secondary);
+.panel_head {
+    margin-bottom: 20px;
 }
-.message_zone.second {
-    border-left-color: var(--tertiary);
+.panel_title {
+    font-size: 17px;
 }
-.message_zone.third {
-    border-left-color: var(--good);
-}
-.message_zone.disabled {
-    border-left-color: var(--border);
-    opacity: 0.75;
+.panel_hint {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 52ch;
 }
 
-#installation_type_container label {
-    color: var(--muted);
-    font-size: 14px;
+.field {
+    margin-bottom: 20px;
 }
-#installation_type_container select,
+.field:last-child {
+    margin-bottom: 0;
+}
+.field_label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 7px;
+}
+.field_hint {
+    margin: 9px 0 0;
+    color: var(--faint);
+    font-size: 13px;
+}
+.field_hint.warn {
+    color: var(--warn);
+}
+
+.file_pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.pick_btn {
+    display: inline-block;
+    padding: 8px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.pick_btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.pick_path {
+    font-size: 12px;
+    color: var(--muted);
+}
+.pick_path.muted {
+    color: var(--faint);
+}
+
+.actions_row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.status_line {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* Form controls (selects + text inputs) share one look. */
+.field_input,
 .category_select,
 .nexus_key_row input,
-.mod_search_bar input[type="text"] {
+.mod_search_bar input[type="text"],
+#installation_type_container select {
     background: var(--surface-2);
     color: var(--text);
     border: 1px solid var(--border);
@@ -463,9 +506,9 @@ button.close:hover:enabled {
     font-size: 14px;
     font-family: inherit;
 }
-#installation_type_container select {
-    margin-top: 10px;
-    width: fit-content;
+.field_input {
+    width: 100%;
+    max-width: 320px;
 }
 select:focus,
 input:focus {
@@ -473,44 +516,44 @@ input:focus {
     border-color: var(--accent);
 }
 
+/* ---- Boxed message zones (the Android installer still uses these) ---------- */
+.message_zone {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 12px;
+}
+.message_zone.disabled {
+    opacity: 0.7;
+}
+#installation_type_container {
+    display: flex;
+    flex-direction: column;
+}
+#installation_type_container label {
+    color: var(--muted);
+    font-size: 14px;
+}
+#installation_type_container select {
+    margin-top: 10px;
+    width: fit-content;
+}
 #action_zone {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
-#action_zone .action_zone_buttons {
+.action_zone_buttons {
     display: flex;
     flex-direction: row;
     gap: 8px;
 }
-#action_zone .status {
-    color: var(--muted);
+.status {
     background: transparent;
     padding: 0;
-}
-
-#sd_select_container div {
     color: var(--muted);
-}
-#sd_select_button_container {
-    display: flex;
-    flex-direction: row;
-    gap: 12px;
-    align-items: center;
-    margin-top: 12px;
-}
-#sd_select_label {
-    display: inline-block;
-    padding: 9px 16px;
-    background: var(--accent);
-    color: #fff;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-}
-#sd_select_label:hover {
-    background: var(--accent-hover);
+    font-size: 13px;
 }
 
 .note {
@@ -626,21 +669,17 @@ input:focus {
     gap: 16px;
 }
 
-/* Translucent, layered cards over the page gradient. No backdrop-filter: blurring the backdrop on
-   every card kills scroll performance, and over the mostly-flat background it's barely visible, so
-   a slightly more opaque gradient fill gives the same look for free. */
 .mod_card {
-    background: linear-gradient(180deg, rgba(30, 37, 48, 0.82), rgba(22, 27, 35, 0.9));
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
     overflow: hidden;
     cursor: pointer;
-    transition: border-color 0.15s, transform 0.14s, box-shadow 0.18s;
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
 .mod_card:hover {
-    border-color: rgba(120, 165, 245, 0.4);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 .mod_card_media {
@@ -658,10 +697,6 @@ input:focus {
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: transform 0.3s ease;
-}
-.mod_card:hover .mod_thumb img {
-    transform: scale(1.05);
 }
 .mod_thumb.blurred img {
     filter: blur(22px);
@@ -773,6 +808,59 @@ input:focus {
     margin-top: 22px;
     color: var(--muted);
 }
+.mod_pager button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Spinner (busy buttons) */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(150, 160, 175, 0.35);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Loading skeletons: a shimmer sweeping across placeholder shapes. */
+@keyframes shimmer {
+    from { background-position: -450px 0; }
+    to { background-position: 450px 0; }
+}
+.skeleton_box,
+.skeleton_line {
+    background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+    background-size: 900px 100%;
+    animation: shimmer 1.3s linear infinite;
+}
+.mod_card.skeleton {
+    cursor: default;
+}
+.mod_card.skeleton:hover {
+    border-color: var(--border);
+    box-shadow: none;
+}
+.skeleton_box {
+    aspect-ratio: 16 / 10;
+}
+.mod_card.skeleton .mod_card_body {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+.skeleton_line {
+    height: 11px;
+    border-radius: 4px;
+}
+.skeleton_line.w70 { width: 70%; }
+.skeleton_line.w55 { width: 55%; }
+.skeleton_line.w40 { width: 40%; }
 
 .mod_message {
     color: var(--muted);

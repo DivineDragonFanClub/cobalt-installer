@@ -13,6 +13,7 @@ use dioxus_sdk::storage::{use_storage, LocalStorage};
 
 use crate::gamebanana::format_filesize;
 use crate::install;
+use crate::mods_ui::{SkeletonCard, Spinner};
 use crate::nexus::{self, Auth, NexusFile, NexusMod};
 
 #[component]
@@ -201,15 +202,24 @@ fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
                     }
                 }
             }
+        } else if loading() {
+            div { class: "mod_grid",
+                for i in 0..12 {
+                    SkeletonCard { key: "{i}" }
+                }
+            }
         }
 
         div { class: "mod_pager",
-            if loading() {
-                span { class: "mod_message", "Loading…" }
-            } else if results().is_empty() && error().is_none() {
-                span { class: "mod_message", "No mods found." }
-            } else if loaded() < total() {
+            if loading() && !results().is_empty() {
+                button { class: "secondary", disabled: true,
+                    Spinner {}
+                    "Loading…"
+                }
+            } else if !results().is_empty() && loaded() < total() {
                 button { class: "secondary", onclick: load_more, "Load more ({loaded}/{total})" }
+            } else if results().is_empty() && !loading() && error().is_none() {
+                span { class: "mod_message", "No mods found." }
             }
         }
 

@@ -167,15 +167,25 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
                         }
                     }
                 }
+            } else if loading() {
+                // First page (fresh browse or a new search): show placeholder cards, not a bare screen.
+                div { class: "mod_grid",
+                    for i in 0..12 {
+                        SkeletonCard { key: "{i}" }
+                    }
+                }
             }
 
             div { class: "mod_pager",
-                if loading() {
-                    span { class: "mod_message", "Loading…" }
-                } else if results().is_empty() && error().is_none() {
-                    span { class: "mod_message", "No mods found." }
-                } else if has_more() {
+                if loading() && !results().is_empty() {
+                    button { class: "secondary", disabled: true,
+                        Spinner {}
+                        "Loading…"
+                    }
+                } else if !results().is_empty() && has_more() {
                     button { class: "secondary", onclick: load_more, "Load more" }
+                } else if results().is_empty() && !loading() && error().is_none() {
+                    span { class: "mod_message", "No mods found." }
                 }
             }
         }
@@ -200,6 +210,28 @@ async fn fetch(query: &str, category: Option<u64>, page: u32) -> anyhow::Result<
         gamebanana::by_category(cat, page).await
     } else {
         gamebanana::browse(page).await
+    }
+}
+
+// A small spinning circle, for buttons that are busy (shared with the Nexus browser).
+#[component]
+pub fn Spinner() -> Element {
+    rsx! { span { class: "spinner" } }
+}
+
+// A shimmering placeholder shaped like a mod card, shown while the first page loads so the grid
+// doesn't pop in from an empty screen. Shared with the Nexus browser.
+#[component]
+pub fn SkeletonCard() -> Element {
+    rsx! {
+        div { class: "mod_card skeleton",
+            div { class: "skeleton_box" }
+            div { class: "mod_card_body",
+                div { class: "skeleton_line w70" }
+                div { class: "skeleton_line w40" }
+                div { class: "skeleton_line w55" }
+            }
+        }
     }
 }
 

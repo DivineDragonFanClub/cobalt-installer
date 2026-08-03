@@ -580,26 +580,27 @@ fn Onboarding(
                     "Where do you play Fire Emblem Engage? We'll check whether Cobalt is already installed there."
                 }
 
-                div { id: "installation_type_container", class: "message_zone first",
-                    label { r#for: "onboard_device_select", "Which device do you use?" }
-                    select {
-                        id: "onboard_device_select",
-                        value: installation_type,
-                        onchange: move |e| installation_type.set(e.value()),
-                        for emu in EMULATORS {
-                            option { label: "{emu.name}", value: "{emu.name}" }
+                section { class: "panel",
+                    div { class: "field",
+                        label { r#for: "onboard_device_select", class: "field_label", "Which device do you use?" }
+                        select {
+                            id: "onboard_device_select",
+                            class: "field_input",
+                            value: installation_type,
+                            onchange: move |e| installation_type.set(e.value()),
+                            for emu in EMULATORS {
+                                option { label: "{emu.name}", value: "{emu.name}" }
+                            }
+                            option { label: "SD card", value: "SD Card" }
                         }
-                        option { label: "SD card", value: "SD Card" }
+                        if installation_type() == "SD Card" {
+                            SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
+                        } else if get_emulator(&installation_type()).is_some() {
+                            EmulatorMessageZone { emulator_name: installation_type() }
+                        }
                     }
-                }
 
-                if installation_type() == "SD Card" {
-                    SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
-                } else if get_emulator(&installation_type()).is_some() {
-                    EmulatorMessageZone { emulator_name: installation_type() }
-                }
-
-                div { class: "message_zone third onboard_result",
+                    div { class: "onboard_result",
                     if cobalt_ready {
                         div { class: "onboard_status ok",
                             {icons::check(18)}
@@ -629,6 +630,7 @@ fn Onboarding(
                                 "We couldn't find this emulator. Pick your SD card folder instead, or choose another device."
                             }
                         }
+                    }
                     }
                 }
             }
@@ -697,33 +699,34 @@ fn Controls(
     };
 
     rsx! {
-        div {
-            id: "installation_type_container",
-            class: "message_zone first",
-            label { r#for: "installation_type_select", "How would you like to install Cobalt?" }
-            select {
-                id: "installation_type_select",
-                value: installation_type,
-                onchange: move |e| {
-                    installation_type.set(e.value());
-                },
-                for emu in EMULATORS {
-                    option { label: "Install for {emu.name}", value: "{emu.name}" }
+        section { class: "panel",
+            div { class: "panel_head",
+                h2 { class: "panel_title", "Install Cobalt" }
+                p { class: "panel_hint",
+                    "Downloads the latest Cobalt and sets it up for your device. Run it again anytime to update."
                 }
-                option { label: "Install onto SD card", value: "SD Card" }
             }
-        }
-        if installation_type() == "SD Card" {
-            SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
-        }
-        if get_emulator(&installation_type()).is_some() {
-            EmulatorMessageZone { emulator_name: installation_type() }
-        }
 
-        div {
-            id: "action_zone",
-            class: {if is_install_ready { "message_zone third" } else { "message_zone disabled" }},
-            div { class: "action_zone_buttons",
+            div { class: "field",
+                label { r#for: "installation_type_select", class: "field_label", "Device" }
+                select {
+                    id: "installation_type_select",
+                    class: "field_input",
+                    value: installation_type,
+                    onchange: move |e| installation_type.set(e.value()),
+                    for emu in EMULATORS {
+                        option { label: "{emu.name}", value: "{emu.name}" }
+                    }
+                    option { label: "SD card", value: "SD Card" }
+                }
+                if installation_type() == "SD Card" {
+                    SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
+                } else if get_emulator(&installation_type()).is_some() {
+                    EmulatorMessageZone { emulator_name: installation_type() }
+                }
+            }
+
+            div { class: "actions_row",
                 button {
                     id: "install_button",
                     class: "primary",
@@ -738,12 +741,11 @@ fn Controls(
                     onclick: move |_| {
                         open_engage_mods_folder(cobalt_mod_path());
                     },
-                    "Open Cobalt Mods Folder"
+                    "Open mods folder"
                 }
             }
-            code { class: "status",
-                "Status: "
-                {status_message}
+            if status_message() != "Waiting for you" {
+                p { class: "status_line", {status_message} }
             }
         }
     }
@@ -856,16 +858,14 @@ pub fn EmulatorMessageZone(emulator_name: String) -> Element {
     };
 
     rsx! {
-        div { class: "message_zone second",
-            div {
-                if emulator.is_installed() {
-                    {emulator.name}
-                    " autodetected at "
-                    code { {emulator.data_path().unwrap().display().to_string()} }
-                } else {
-                    div { "We couldn't find your {emulator.name} installation." }
-                    div { "Please use the SD Card installation type instead." }
-                }
+        if emulator.is_installed() {
+            p { class: "field_hint",
+                "Detected at "
+                code { {emulator.data_path().unwrap().display().to_string()} }
+            }
+        } else {
+            p { class: "field_hint warn",
+                "We couldn't find {emulator.name} on this computer. Choose SD card instead, or pick a different device."
             }
         }
     }
@@ -875,42 +875,31 @@ pub fn EmulatorMessageZone(emulator_name: String) -> Element {
 #[component]
 pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
     rsx! {
-        div { id: "sd_select_container", class: "message_zone second",
-            div { "Select your SD Card folder, and we'll install Cobalt there." }
-            div { id: "sd_select_button_container",
-                label { id: "sd_select_label", r#for: "sd_select", "Select SD Card folder" }
-                input {
-                    id: "sd_select",
-                    r#type: "file",
-                    // Select a folder by setting the directory attribute
-                    directory: true,
-                    onchange: move |evt| {
-                        let files = evt.files();
-                        if let Some(file) = files.iter().next() {
-                            let dir = file.name().to_string();
-                            tracing::info!("You chose folder: {}", dir);
-                            selected_sdcard_path.set(dir);
-                        }
-                    },
-                    display: "none",
-                }
-                div {
-                    code {
-                        if selected_sdcard_path().len() == 0 {
-                            {"No folder selected"}
-                        } else {
-                            {selected_sdcard_path}
-                        }
+        div { id: "sd_select_button_container", class: "file_pick",
+            label { id: "sd_select_label", class: "pick_btn", r#for: "sd_select", "Choose folder…" }
+            input {
+                id: "sd_select",
+                r#type: "file",
+                // Select a folder by setting the directory attribute
+                directory: true,
+                display: "none",
+                onchange: move |evt| {
+                    let files = evt.files();
+                    if let Some(file) = files.first() {
+                        let dir = file.name().to_string();
+                        tracing::info!("You chose folder: {}", dir);
+                        selected_sdcard_path.set(dir);
                     }
-                }
-                if selected_sdcard_path().len() > 0 {
-                    button {
-                        class: "close",
-                        onclick: move |_| {
-                            selected_sdcard_path.set("".to_string());
-                        },
-                        "X"
-                    }
+                },
+            }
+            if selected_sdcard_path().is_empty() {
+                span { class: "pick_path muted", "No folder selected" }
+            } else {
+                code { class: "pick_path", {selected_sdcard_path} }
+                button {
+                    class: "close",
+                    onclick: move |_| selected_sdcard_path.set(String::new()),
+                    "X"
                 }
             }
         }

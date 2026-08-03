@@ -416,6 +416,9 @@ fn Body(status_message: Signal<String>) -> Element {
     let installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || "Ryujinx".to_string());
     let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || "".to_string());
     let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
+    // First run walks the user through picking their device and confirming Cobalt is there. Once
+    // done we remember it and go straight to the main app on later launches.
+    let onboarded = use_storage::<LocalStorage, bool>("onboarded".into(), || false);
     let mut active_tab = use_signal(|| Tab::Install);
     // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
     let mut nxm_status = use_signal(|| None::<String>);
@@ -469,6 +472,9 @@ fn Body(status_message: Signal<String>) -> Element {
                 button { class: "close", onclick: move |_| nxm_status.set(None), "X" }
             }
         }
+        if !onboarded() {
+            Onboarding { status_message, installation_type, user_selected_sdcard_path, onboarded }
+        } else {
         div { class: "app_shell",
             nav { class: "sidebar",
                 button {
@@ -519,6 +525,111 @@ fn Body(status_message: Signal<String>) -> Element {
                             div { class: "mod_message", "Pick an install target on the Install tab first." }
                         }
                     },
+                }
+            }
+        }
+        }
+    }
+}
+
+// First-run onboarding (desktop): pick the device you play on, then we check whether Cobalt is
+// already installed there. If it is, Continue opens the main app. If not, install it right here
+// first. The device choice is the same one the rest of the app uses, so picking it here also sets
+// the target the mod browser installs into.
+#[cfg(feature = "desktop")]
+#[component]
+fn Onboarding(
+    mut status_message: Signal<String>,
+    mut installation_type: Signal<String>,
+    user_selected_sdcard_path: Signal<String>,
+    mut onboarded: Signal<bool>,
+) -> Element {
+    let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
+    let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
+
+    // Is the chosen device a usable target yet? (emulator actually found on disk, or an SD folder picked)
+    let target_ready = if installation_type() == "SD Card" {
+        !user_selected_sdcard_path().is_empty()
+    } else if let Some(emulator) = get_emulator(&installation_type()) {
+        emulator.is_installed()
+    } else {
+        false
+    };
+
+    let install_cobalt = move |_| async move {
+        let Some(dest) = resolve_sd_root(&installation_type(), &user_selected_sdcard_path()) else {
+            return;
+        };
+        if let Some(emulator) = get_emulator(&installation_type()) {
+            delete_bad_subsdk9(emulator).await;
+        }
+        status_message.set("Downloading release".to_string());
+        let response = download_release().await;
+        let zip_archive_bytes = response.bytes().await.unwrap();
+        extract_release(&zip_archive_bytes, dest.clone()).await;
+        create_mods_directory(dest).await;
+        // Setting status re-renders, and the Cobalt check above re-runs, unlocking Continue.
+        status_message.set("Installation complete".to_string());
+    };
+
+    rsx! {
+        div { id: "onboarding",
+            div { class: "onboard_card",
+                h2 { "Set up your device" }
+                p { class: "onboard_sub",
+                    "Where do you play Fire Emblem Engage? We'll check whether Cobalt is already installed there."
+                }
+
+                div { id: "installation_type_container", class: "message_zone first",
+                    label { r#for: "onboard_device_select", "Which device do you use?" }
+                    select {
+                        id: "onboard_device_select",
+                        value: installation_type,
+                        onchange: move |e| installation_type.set(e.value()),
+                        for emu in EMULATORS {
+                            option { label: "{emu.name}", value: "{emu.name}" }
+                        }
+                        option { label: "SD card", value: "SD Card" }
+                    }
+                }
+
+                if installation_type() == "SD Card" {
+                    SdCardSelector { selected_sdcard_path: user_selected_sdcard_path }
+                } else if get_emulator(&installation_type()).is_some() {
+                    EmulatorMessageZone { emulator_name: installation_type() }
+                }
+
+                div { class: "message_zone third onboard_result",
+                    if cobalt_ready {
+                        div { class: "onboard_status ok",
+                            {icons::check(18)}
+                            span { "Cobalt is installed on {installation_type()}. You're all set!" }
+                        }
+                        button {
+                            class: "primary",
+                            onclick: move |_| onboarded.set(true),
+                            "Continue to mods"
+                        }
+                    } else if target_ready {
+                        div { class: "onboard_status",
+                            "Cobalt isn't installed on {installation_type()} yet. Install it here to continue."
+                        }
+                        div { class: "action_zone_buttons",
+                            button { class: "primary", onclick: install_cobalt, "Install Cobalt" }
+                        }
+                        code { class: "status",
+                            "Status: "
+                            {status_message}
+                        }
+                    } else {
+                        div { class: "onboard_status",
+                            if installation_type() == "SD Card" {
+                                "Select your SD card folder above to continue."
+                            } else {
+                                "We couldn't find this emulator. Pick your SD card folder instead, or choose another device."
+                            }
+                        }
+                    }
                 }
             }
         }

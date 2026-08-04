@@ -28,6 +28,8 @@ const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 // Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
 // before the "Open on GameBanana" link in the mod detail overlay.
 const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
+// Bond fragment crystal, trailing the Sammie-click easter egg message.
+const ICON_BONDS: Asset = asset!("/assets/icon_bonds.png");
 
 #[cfg(feature = "desktop")]
 use dirs::home_dir;
@@ -448,7 +450,8 @@ fn App() -> Element {
                  .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
                  .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
                  .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\
-                 .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}"
+                 .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                 .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}"
             )}
         }
         Hero {}
@@ -787,7 +790,7 @@ fn Onboarding(
                         div { class: "action_zone_buttons",
                             button { class: "engage", onclick: install_cobalt, "Install Cobalt" }
                         }
-                        code { class: "status",
+                        code { class: if status_message().contains("bond fragments") { "status bonds" } else { "status" },
                             "Status: "
                             {status_message}
                         }
@@ -961,7 +964,7 @@ fn Controls(
                 }
             }
             if status_message() != "Waiting for you" {
-                p { class: "status_line", {status_message} }
+                p { class: if status_message().contains("bond fragments") { "status_line bonds" } else { "status_line" }, {status_message} }
             }
         }
     }
@@ -1058,7 +1061,7 @@ fn Controls(mut status_message: Signal<String>) -> Element {
                     "Install Cobalt"
                 }
             }
-            code { class: "status",
+            code { class: if status_message().contains("bond fragments") { "status bonds" } else { "status" },
                 "Status: "
                 {status_message}
             }

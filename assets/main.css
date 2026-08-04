@@ -199,18 +199,25 @@ a:hover {
     font-size: 13px;
 }
 
+/* Operational plaque, same as the ghost/danger_outline buttons at the end of
+   the file (it's an <a>, so the styles are restated here). */
 .header_help {
     margin-left: auto;
-    color: var(--muted);
-    font-size: 13px;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    transition: border-color 0.15s, color 0.15s;
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: light-dark(#2b2517, #e8e0cc);
+    background: light-dark(#fdfdfb, #14181f);
+    padding: 7px 14px;
+    border: 1px solid light-dark(#a08a52, #8a744a);
+    border-radius: 3px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .header_help:hover {
-    color: var(--text);
-    border-color: var(--border-strong);
+    background: light-dark(#f8f4e9, #1b212b);
+    border-color: #b39347;
+    color: light-dark(#2b2517, #f2ecd9);
     text-decoration: none;
 }
 

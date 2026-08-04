@@ -20,15 +20,14 @@ const SAMMIE: Asset = asset!("/assets/SAMMIE.png");
 // 400-800, latin subset. The @font-face lives in App so the url survives
 // asset hashing.
 const EB_GARAMOND: Asset = asset!("/assets/fonts/EBGaramond.woff2");
-// The in-game menu pointer (») from the user's own Engage dump, shown next to
-// the active sidebar item. Injected below alongside the font so the hashed
-// asset url can reach CSS.
-const ENGAGE_POINTER: Asset = asset!("/assets/engage_pointer.png");
 // Somniel facility icons for the sidebar (same dump as the pointer): the
 // forge, the market and the bedroom. Tinted via CSS mask like the pointer.
 const ICON_INSTALL: Asset = asset!("/assets/icon_install.png");
 const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
 const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
+// Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
+// before the "Open on GameBanana" link in the mod detail overlay.
+const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
 
 #[cfg(feature = "desktop")]
 use dirs::home_dir;
@@ -446,12 +445,10 @@ fn App() -> Element {
         document::Style {
             {format!(
                 "@font-face {{ font-family: \"EB Garamond\"; src: url(\"{EB_GARAMOND}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
-                 .nav_item::before {{ content: \"\"; width: 14px; height: 12px; flex-shrink: 0; background-color: #b39347; -webkit-mask: url(\"{ENGAGE_POINTER}\") no-repeat center / contain; mask: url(\"{ENGAGE_POINTER}\") no-repeat center / contain; }}\n\
-                 .nav_item.active::before {{ background-color: light-dark(#c22a30, #ff7a70); }}\n\
-                 .nav_item:disabled::before {{ opacity: 0.4; }}\n\
                  .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
                  .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
-                 .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}"
+                 .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\
+                 .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}"
             )}
         }
         Hero {}

@@ -40,6 +40,10 @@
     --secondary: light-dark(#1f6fb5, #2f88d6);
     --tertiary: light-dark(#b7c2d3, #34405a);
 
+    /* the CTA arrow (site's arrow_link.svg redrawn): gold on light, swapped
+       to brand red by the dark-theme rules below the token block */
+    --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23b39347' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
+
     --radius: 10px;
     --radius-sm: 6px;
     --shadow: 0 6px 20px light-dark(rgba(25, 35, 55, 0.10), rgba(0, 0, 0, 0.35));
@@ -53,6 +57,17 @@
 }
 [data-theme="dark"] {
     color-scheme: dark;
+}
+
+/* Dark theme swaps the CTA arrow to brand red. Two selectors so the footer
+   toggle's data-theme override wins in both directions. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23ff060e' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
+    }
+}
+[data-theme="dark"] {
+    --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23ff060e' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
 }
 
 /* ---- Base ----------------------------------------------------------------- */
@@ -244,9 +259,12 @@ a:hover {
 
 /* ---- Buttons -------------------------------------------------------------- */
 button {
-    font-family: inherit;
-    font-size: 14px;
-    font-weight: 600;
+    /* every button speaks the hero's type: the display serif at 16/700.
+       Hero differentiation is the arrow + gradient plate only. */
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     color: var(--text);
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -351,31 +369,32 @@ button.engage {
        element's own background always paints below its negative-z pseudos. */
     z-index: 0;
     background: transparent;
-    color: #1c2433;
+    /* light theme keeps the original white-face look; dark runs the black
+       nameplate variant. The arrow rides --engage-arrow from the token block. */
+    color: light-dark(#1c2433, #fff);
+    transition: transform 0.15s;
     border: none;
     border-radius: 0;
     /* the plate overhangs the layout box by 6px down-right; give it back so
        neighbors and the status line keep their intended gaps */
     margin: 0 6px 6px 0;
     /* symmetric padding so the label centers on the face like the original;
-       the arrow floats inside the right padding */
+       the arrow floats inside the right padding. Type comes from the base
+       button rule — hero is arrow + gradient, not a different font. */
     padding: 12px 46px;
-    /* the serif face ships in main.rs (@font-face, EB Garamond variable) */
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    transition: transform 0.3s;
+    /* No hover motion on the button itself (animated scale/translate kept
+       flashing in WKWebView) — hover feedback lives on the plate. The press
+       still moves via :active, which is instant and doesn't transition. */
 }
-/* White face; the gold arrow (the site's arrow_link.svg redrawn inline) rides
-   along as its background image. */
+/* Face: white in light theme (the original look), black nameplate in dark.
+   The arrow rides as the face's background image. */
 button.engage::before {
     content: "";
     position: absolute;
     z-index: -1;
     inset: 0;
-    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23b39347' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E") no-repeat right 16px center / 10px 10px;
-    box-shadow: 0 0 4px 4px rgba(0, 0, 0, 0.05);
+    background: light-dark(#ffffff, #0c0e13) var(--engage-arrow) no-repeat right 16px center / 10px 10px;
+    box-shadow: 0 0 4px 4px light-dark(rgba(20, 28, 40, 0.09), rgba(0, 0, 0, 0.4));
 }
 /* The gradient plate, peeking out 6px down-right behind the face. */
 button.engage::after {
@@ -386,16 +405,23 @@ button.engage::after {
     left: 6px;
     width: 100%;
     height: 100%;
-    background: linear-gradient(to right, #ff060e, #0b399a);
-    transition: filter 0.5s;
+    /* Filter-free brighten: the gradient is slightly translucent over a
+       background-color that fades dark→white on hover. Animating brightness()
+       put the plate on an offscreen filter surface whose edges fringe dark in
+       WebKit (the "black glow"). background-color animation is plain paint. */
+    background-image: linear-gradient(to right, rgba(255, 6, 14, 0.8), rgba(11, 57, 154, 0.8));
+    background-color: #351523;
+    transition: background-color 0.5s;
 }
 button.engage:hover:enabled {
     /* the global button hover would tint the (transparent) background */
     background: transparent;
+    /* snappy grow: rides the base 0.05s transform transition — long scale
+       animations re-raster visibly in WKWebView, 2-3 frames don't */
     transform: scale(1.02);
 }
 button.engage:hover:enabled::after {
-    filter: brightness(1.4);
+    background-color: #fff;
 }
 /* Press down onto the plate instead of the default 1px nudge. */
 button.engage:active:enabled {
@@ -626,14 +652,16 @@ button.engage:disabled::after {
     width: 80px;
 }
 .pick_btn {
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     display: inline-block;
     padding: 8px 14px;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
     cursor: pointer;
 }
 .pick_btn:hover {
@@ -1239,6 +1267,10 @@ input:focus {
     border-top: 1px solid var(--border);
 }
 .manual_btn {
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     display: inline-block;
     margin-top: 8px;
     padding: 8px 16px;
@@ -1247,8 +1279,6 @@ input:focus {
     color: var(--text);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
 }
 .manual_btn:hover {
     background: var(--surface-3);
@@ -1435,6 +1465,8 @@ button.danger,
     border-radius: 0;
     /* plate overhang compensation, same idea as button.engage */
     margin: 0 6px 6px 0;
+    /* slower grow than the base 0.05s, still short enough to hide re-raster */
+    transition: transform 0.15s;
 }
 button.primary::before,
 button.secondary::before,
@@ -1447,7 +1479,9 @@ button.danger::before,
     z-index: -1;
     inset: 0;
     background: light-dark(#ffffff, #232b37);
-    box-shadow: 0 0 3px 3px rgba(0, 0, 0, 0.04);
+    /* the site's soft halo shadow (0 0 4px 4px), tuned per theme so faces
+       don't melt into flat backgrounds */
+    box-shadow: 0 0 4px 4px light-dark(rgba(20, 28, 40, 0.09), rgba(0, 0, 0, 0.4));
     transition: background 0.15s, filter 0.15s;
 }
 button.primary::after,
@@ -1463,22 +1497,29 @@ button.danger::after,
     left: 6px;
     width: 100%;
     height: 100%;
-    background: linear-gradient(to right,
-        light-dark(#c6d0df, #46536b),
-        light-dark(#8fa0b8, #232b37));
-    transition: filter 0.3s;
+    /* light→grey gradient at rest; hover brightens the whole plate via the
+       white underlay (translucent stops, filter-free like the hero plate) */
+    background-image: linear-gradient(100deg,
+        light-dark(rgba(217, 223, 233, 0.82), rgba(90, 104, 127, 0.82)),
+        light-dark(rgba(123, 139, 163, 0.82), rgba(22, 28, 38, 0.82)));
+    background-color: light-dark(#aab5c6, #38424f);
+    transition: background-color 0.4s;
 }
 
 /* variant faces + plates */
 button.primary {
     /* white face in both themes, like engage */
     color: #1c2433;
+    /* room for the arrow riding the face's right edge */
+    padding-right: 34px;
 }
 button.primary::before {
-    background: #fff;
+    background: #fff var(--engage-arrow) no-repeat right 12px center / 9px 9px;
 }
 button.primary::after {
-    background: linear-gradient(to right, #ff060e, #0b399a);
+    background-image: linear-gradient(to right, rgba(255, 6, 14, 0.8), rgba(11, 57, 154, 0.8));
+    background-color: #351523;
+    transition: background-color 0.5s;
 }
 button.danger {
     color: #fff;
@@ -1500,20 +1541,17 @@ button.danger:hover:enabled,
 .manual_btn:hover,
 .errline button:hover:enabled {
     background: transparent;
+    transform: scale(1.02);
 }
 button.primary:hover:enabled::after {
-    filter: brightness(1.4);
+    background-color: #fff;
 }
-/* hover glow: the nav_system_on pale red→blue wash over the face */
-button.secondary:hover:enabled::before,
-.pick_btn:hover::before,
-.manual_btn:hover::before,
-.errline button:hover:enabled::before {
-    background:
-        linear-gradient(120deg,
-            light-dark(#fbe4e3, rgba(255, 70, 64, 0.14)),
-            light-dark(#e4e9f8, rgba(70, 110, 246, 0.22))),
-        light-dark(#ffffff, #232b37);
+/* hover leaves the face alone; the plate brightens */
+button.secondary:hover:enabled::after,
+.pick_btn:hover::after,
+.manual_btn:hover::after,
+.errline button:hover:enabled::after {
+    background-color: #fff;
 }
 button.danger:hover:enabled::before {
     filter: brightness(1.12);
@@ -1541,10 +1579,37 @@ button.primary:disabled::after {
     filter: grayscale(1) brightness(0.8);
 }
 
-/* flat utility buttons just join the square language */
-button.ghost,
-button.close,
-button.danger_outline {
+/* the close X stays flat, just squared */
+button.close {
     border-radius: 0;
 }
 
+
+
+/* ---- Operational buttons ---------------------------------------------------
+   The site's simple bordered plaque (the 紹介ページへ button): flat cream face,
+   bronze hairline, gold ► before the label. Row-level actions: Open, View,
+   Cancel, Refresh (ghost) and Uninstall (danger_outline, red-flavored).
+   Deliberately planted — no plate, no scale. */
+button.ghost,
+button.danger_outline {
+    background: light-dark(#fdfdfb, #14181f);
+    border: 1px solid light-dark(#a08a52, #8a744a);
+    border-radius: 3px;
+    color: light-dark(#2b2517, #e8e0cc);
+    padding: 7px 14px;
+}
+button.ghost:hover:enabled {
+    background: light-dark(#f8f4e9, #1b212b);
+    border-color: #b39347;
+    color: light-dark(#2b2517, #f2ecd9);
+}
+button.danger_outline {
+    border-color: light-dark(#c5716a, #77413c);
+    color: light-dark(#a8332b, #e88b85);
+}
+button.danger_outline:hover:enabled {
+    background: light-dark(#fbf0ee, #241a19);
+    border-color: var(--danger);
+    color: light-dark(#8f2a23, #ffc9c4);
+}

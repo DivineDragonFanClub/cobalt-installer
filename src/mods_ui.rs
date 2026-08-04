@@ -389,7 +389,7 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
             }
         }
 
-        a { class: "mod_page_link", href: "{detail.profile_url}", "Open on GameBanana" }
+        a { class: "mod_page_link gb_link", href: "{detail.profile_url}", "Open on GameBanana" }
     }
 }
 

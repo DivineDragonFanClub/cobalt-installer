@@ -1,45 +1,58 @@
 /* ============================================================================
    Cobalt Installer styles
-   Dark theme, blue accent (matches the Cobalt/FE Engage vibe). Organized as a
-   small design system: tokens up top, then base, layout, components.
+   Light + dark theme, blue accent (matches the Cobalt/FE Engage vibe).
+   Organized as a small design system: tokens up top, then base, layout,
+   components. Every themed color is a light-dark(light, dark) pair; the app
+   follows the OS scheme unless data-theme="light|dark" is set on <html>.
    ============================================================================ */
 
 /* ---- Design tokens -------------------------------------------------------- */
 :root {
+    color-scheme: light dark;
+
     /* surfaces, from deepest background up to raised cards */
-    --bg: #0c0e13;
-    --surface: #14181f;
-    --surface-2: #1b212b;
-    --surface-3: #232b37;
+    --bg: light-dark(#f3f5f8, #0c0e13);
+    --surface: light-dark(#ffffff, #14181f);
+    --surface-2: light-dark(#eef1f5, #1b212b);
+    --surface-3: light-dark(#e4e9ef, #232b37);
 
     /* lines */
-    --border: #2a3240;
-    --border-strong: #3a4557;
+    --border: light-dark(#d8dee8, #2a3240);
+    --border-strong: light-dark(#b9c3d2, #3a4557);
 
     /* text */
-    --text: #eaedf2;
-    --muted: #9aa5b4;
-    --faint: #6b7688;
+    --text: light-dark(#1a2230, #eaedf2);
+    --muted: light-dark(#5a6675, #9aa5b4);
+    --faint: light-dark(#7e889b, #6b7688);
 
     /* accent (blue) + a couple of status colors */
-    --accent: #3b82f6;
-    --accent-hover: #5a97f8;
-    --accent-dim: #1e3a63;
-    --good: #34c46a;
-    --good-dim: #123a24;
-    --warn: #e0a23c;
-    --danger: #e0574f;
-    --danger-dim: #4a1f1d;
+    --accent: light-dark(#2563eb, #3b82f6);
+    --accent-hover: light-dark(#1d4ed8, #5a97f8);
+    --accent-dim: light-dark(#dbeafe, #1e3a63);
+    --good: light-dark(#178a47, #34c46a);
+    --good-dim: light-dark(#d9f2e3, #123a24);
+    --warn: light-dark(#9a6b13, #e0a23c);
+    --danger: light-dark(#d13c34, #e0574f);
+    --danger-dim: light-dark(#fbe1df, #4a1f1d);
 
     /* legacy names still referenced in a few older rules */
     --primary: var(--accent);
-    --secondary: #2f88d6;
-    --tertiary: #34405a;
+    --secondary: light-dark(#1f6fb5, #2f88d6);
+    --tertiary: light-dark(#b7c2d3, #34405a);
 
     --radius: 10px;
     --radius-sm: 6px;
-    --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --shadow: 0 6px 20px light-dark(rgba(25, 35, 55, 0.10), rgba(0, 0, 0, 0.35));
+    --shadow-lg: 0 12px 40px light-dark(rgba(25, 35, 55, 0.18), rgba(0, 0, 0, 0.5));
+}
+
+/* Explicit theme override — the settings toggle sets data-theme on <html>;
+   without it (or with data-theme="auto"/removed) the app follows the OS. */
+[data-theme="light"] {
+    color-scheme: light;
+}
+[data-theme="dark"] {
+    color-scheme: dark;
 }
 
 /* ---- Base ----------------------------------------------------------------- */
@@ -70,6 +83,17 @@ h1, h2, h3 {
     margin: 0;
     font-weight: 700;
     letter-spacing: -0.01em;
+}
+
+/* App-chrome headings get the display serif (EB Garamond, shipped from
+   main.rs). User content (mod names, cards) stays in the UI sans. The negative
+   tracking above cramps Garamond, so reset it here. */
+.app_header_text h1,
+.panel_title,
+.onboard_card h2,
+.my_mods_title h2 {
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    letter-spacing: 0;
 }
 
 code {
@@ -110,7 +134,7 @@ a:hover {
     border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #4a566c;
+    background: light-dark(#9aa7ba, #4a566c);
 }
 ::-webkit-scrollbar-corner {
     background: transparent;
@@ -149,7 +173,8 @@ a:hover {
     flex-direction: column;
 }
 .app_header_text h1 {
-    font-size: 20px;
+    /* serif runs small at equal px, so these sizes sit a step above the old sans sizes */
+    font-size: 23px;
     font-weight: 700;
     color: var(--text);
 }
@@ -198,6 +223,25 @@ a:hover {
     opacity: 0.5;
 }
 
+/* Theme switcher: a small pill next to "Get help", cycling auto → light → dark. */
+#credits .theme_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 11px;
+}
+#credits .theme_toggle:hover:enabled {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+}
+
 /* ---- Buttons -------------------------------------------------------------- */
 button {
     font-family: inherit;
@@ -233,8 +277,8 @@ button.primary:hover:enabled {
     border-color: transparent;
 }
 button.primary:disabled {
-    background: #38404e;
-    color: #aab3c0;
+    background: light-dark(#c9d2de, #38404e);
+    color: light-dark(#8794a6, #aab3c0);
 }
 
 button.secondary {
@@ -260,19 +304,19 @@ button.danger {
     color: #fff;
 }
 button.danger:hover:enabled {
-    background: #ec6a62;
+    background: light-dark(#b52f28, #ec6a62);
     border-color: transparent;
 }
 
 button.danger_outline {
     background: transparent;
-    border-color: var(--danger-dim);
-    color: #e88b85;
+    border-color: light-dark(#f0b6b1, #4a1f1d);
+    color: light-dark(#c03830, #e88b85);
     padding: 7px 13px;
 }
 button.danger_outline:hover:enabled {
     background: var(--danger-dim);
-    color: #ffd7d3;
+    color: light-dark(#7f221c, #ffd7d3);
     border-color: var(--danger);
 }
 
@@ -292,6 +336,76 @@ button.close {
 button.close:hover:enabled {
     color: var(--text);
     background: var(--surface-2);
+}
+
+/* The install CTA, an homage to the FE Engage site's .feeg-btn: a white face
+   with the Engage red→blue gradient plate peeking out behind it and a gold
+   arrow. The face stays white in both themes on purpose — it's brand, like
+   the pills over artwork. Square corners are part of the look. */
+button.engage {
+    position: relative;
+    /* Layering: the button itself has no background — the white face is the
+       z:-1 ::before, the gradient plate the z:-2 ::after. Inside the button's
+       stacking context both paint above its (transparent) background but below
+       the label text. Putting the face on the button itself doesn't work: an
+       element's own background always paints below its negative-z pseudos. */
+    z-index: 0;
+    background: transparent;
+    color: #1c2433;
+    border: none;
+    border-radius: 0;
+    /* the plate overhangs the layout box by 6px down-right; give it back so
+       neighbors and the status line keep their intended gaps */
+    margin: 0 6px 6px 0;
+    /* symmetric padding so the label centers on the face like the original;
+       the arrow floats inside the right padding */
+    padding: 12px 46px;
+    /* the serif face ships in main.rs (@font-face, EB Garamond variable) */
+    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    transition: transform 0.3s;
+}
+/* White face; the gold arrow (the site's arrow_link.svg redrawn inline) rides
+   along as its background image. */
+button.engage::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23b39347' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E") no-repeat right 16px center / 10px 10px;
+    box-shadow: 0 0 4px 4px rgba(0, 0, 0, 0.05);
+}
+/* The gradient plate, peeking out 6px down-right behind the face. */
+button.engage::after {
+    content: "";
+    position: absolute;
+    z-index: -2;
+    top: 6px;
+    left: 6px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, #ff060e, #0b399a);
+    transition: filter 0.5s;
+}
+button.engage:hover:enabled {
+    /* the global button hover would tint the (transparent) background */
+    background: transparent;
+    transform: scale(1.02);
+}
+button.engage:hover:enabled::after {
+    filter: brightness(1.4);
+}
+/* Press down onto the plate instead of the default 1px nudge. */
+button.engage:active:enabled {
+    transform: translate(3px, 3px);
+}
+button.engage:disabled {
+    background: transparent;
+}
+button.engage:disabled::after {
+    filter: grayscale(1) brightness(0.8);
 }
 
 /* ---- Sidebar nav ---------------------------------------------------------- */
@@ -331,14 +445,31 @@ button.close:hover:enabled {
     color: var(--text);
     background: var(--surface-2);
 }
+/* Selected state, after the Engage site's nav "on" glow: a pale red→blue
+   wash with the label in brand navy (the injected style turns the » red). */
 .nav_item.active {
-    background: var(--accent);
-    color: #fff;
+    background: linear-gradient(120deg,
+        light-dark(#fbe4e3, rgba(255, 70, 64, 0.16)),
+        light-dark(#e4e9f8, rgba(70, 110, 246, 0.24)));
+    color: light-dark(#0b399a, #d9e0f7);
+    font-weight: 700;
 }
 /* Keep the active item looking active on hover instead of falling back to the grey hover. */
 .nav_item.active:hover:enabled {
-    background: var(--accent-hover);
-    color: #fff;
+    background: linear-gradient(120deg,
+        light-dark(#f9d9d7, rgba(255, 70, 64, 0.24)),
+        light-dark(#dae1f6, rgba(70, 110, 246, 0.34)));
+    color: light-dark(#0b399a, #e6ebfa);
+}
+/* The site runs the brand gradient across the selected label's glyphs too:
+   red letters fading into navy. currentColor still paints the icon. */
+.nav_item.active .nav_label {
+    background: linear-gradient(to right,
+        light-dark(#b3232e, #ff9088),
+        light-dark(#0b399a, #9fb4ff));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 .nav_item:disabled {
     color: var(--faint);
@@ -350,6 +481,19 @@ button.close:hover:enabled {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+}
+/* Game-texture icons: full-color facility art shown as-is (their dark outline
+   reads on both themes). background-image urls are injected from main.rs. */
+.nav_icon.game {
+    width: 20px;
+    height: 20px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+}
+.nav_item:disabled .nav_icon.game {
+    opacity: 0.45;
+    filter: grayscale(0.7);
 }
 .nav_label {
     flex: 1;
@@ -382,7 +526,7 @@ button.close:hover:enabled {
     max-width: 560px;
 }
 .onboard_card h2 {
-    font-size: 18px;
+    font-size: 20px;
 }
 .onboard_sub {
     color: var(--muted);
@@ -420,7 +564,7 @@ button.close:hover:enabled {
     margin-bottom: 20px;
 }
 .panel_title {
-    font-size: 17px;
+    font-size: 19px;
 }
 .panel_hint {
     margin: 5px 0 0;
@@ -507,7 +651,8 @@ button.close:hover:enabled {
 .actions_row {
     display: flex;
     gap: 10px;
-    align-items: center;
+    /* side-by-side buttons match the CTA's height instead of centering short */
+    align-items: stretch;
 }
 .status_line {
     margin: 14px 0 0;
@@ -648,18 +793,18 @@ input:focus {
 }
 .installed_badge {
     background: var(--good-dim);
-    color: #6fe39a;
-    border: 1px solid #1f7a44;
+    color: light-dark(#136c39, #6fe39a);
+    border: 1px solid light-dark(#a4dcbc, #1f7a44);
 }
 .chip.gb {
-    background: #3a2a10;
-    color: #f4c56b;
-    border: 1px solid #6b4e1e;
+    background: light-dark(#f8edd3, #3a2a10);
+    color: light-dark(#8a5e10, #f4c56b);
+    border: 1px solid light-dark(#e6d09a, #6b4e1e);
 }
 .chip.nexus {
-    background: #2a1a10;
-    color: #f0a06a;
-    border: 1px solid #6b3e1e;
+    background: light-dark(#fae9dc, #2a1a10);
+    color: light-dark(#a14e1a, #f0a06a);
+    border: 1px solid light-dark(#edc6a4, #6b3e1e);
 }
 .chip.manual {
     background: var(--surface-3);
@@ -667,13 +812,13 @@ input:focus {
     border: 1px solid var(--border-strong);
 }
 .chip.warn {
-    background: #3a3410;
+    background: light-dark(#f8f0cf, #3a3410);
     color: var(--warn);
-    border: 1px solid #6b5e1e;
+    border: 1px solid light-dark(#e4d38b, #6b5e1e);
 }
 .premium_badge {
-    background: #4a3a10;
-    color: #f4c56b;
+    background: light-dark(#f5e8c6, #4a3a10);
+    color: light-dark(#8a5e10, #f4c56b);
     font-size: 11px;
     font-weight: 600;
     padding: 1px 8px;
@@ -702,7 +847,7 @@ input:focus {
 }
 .mod_card:hover {
     border-color: var(--border-strong);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 14px light-dark(rgba(25, 35, 55, 0.12), rgba(0, 0, 0, 0.3));
 }
 
 .mod_card_media {
@@ -726,7 +871,9 @@ input:focus {
     transform: scale(1.15);
 }
 
-/* Darkens the bottom of the image so the category chip stays readable. */
+/* Darkens the bottom of the image so the category chip stays readable.
+   Scrim, pills and the category chip sit on top of mod artwork, so they stay
+   dark-on-image in both themes — don't convert these to light-dark(). */
 .mod_card_scrim {
     position: absolute;
     inset: 0;
@@ -890,7 +1037,7 @@ input:focus {
     padding: 20px 0;
 }
 .mod_message.error {
-    color: #ec7c74;
+    color: light-dark(#bf3a31, #ec7c74);
 }
 
 /* ---- Empty state ---------------------------------------------------------- */
@@ -922,7 +1069,7 @@ input:focus {
 .mod_detail_overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: light-dark(rgba(25, 32, 45, 0.45), rgba(0, 0, 0, 0.7));
     backdrop-filter: blur(3px);
     display: flex;
     justify-content: center;
@@ -978,7 +1125,7 @@ input:focus {
 }
 
 .mod_desc {
-    color: #cfd6e0;
+    color: light-dark(#39434f, #cfd6e0);
     font-size: 14px;
     line-height: 1.6;
     max-height: 200px;
@@ -1047,7 +1194,7 @@ input:focus {
     gap: 8px;
 }
 .install_row .err {
-    color: #ec7c74;
+    color: light-dark(#bf3a31, #ec7c74);
     font-size: 13px;
 }
 
@@ -1133,7 +1280,7 @@ input:focus {
     margin-bottom: 16px;
     padding: 11px 15px;
     background: var(--good-dim);
-    border: 1px solid #1f7a44;
+    border: 1px solid light-dark(#a4dcbc, #1f7a44);
     border-radius: var(--radius);
     font-size: 14px;
 }
@@ -1157,7 +1304,7 @@ input:focus {
     gap: 10px;
 }
 .my_mods_title h2 {
-    font-size: 18px;
+    font-size: 20px;
 }
 .my_mods_title .count {
     color: var(--faint);
@@ -1262,3 +1409,142 @@ input:focus {
         justify-content: flex-end;
     }
 }
+
+/* ---- Engage button system --------------------------------------------------
+   The .feeg-btn treatment rolled out across the app. Lives at the end of the
+   file so it overrides the older per-component button rules above. Tiers:
+   - engage           hero CTAs: white face, brand gradient plate, arrow, serif
+   - primary          standard CTAs: white face, brand gradient plate, no arrow
+   - secondary, .pick_btn, .manual_btn, .errline button   slate gradient plate
+   - danger           red face, dark red gradient plate
+   All plates share the engage geometry: 6px offset, 3px press travel.
+   - ghost, close, danger_outline   flat utility, squared corners only
+   nav_item, .source_toggle .src and .theme_toggle stay pills on purpose:
+   they're navigation/chrome, not actions. */
+button.primary,
+button.secondary,
+button.danger,
+.pick_btn,
+.manual_btn,
+.errline button {
+    position: relative;
+    z-index: 0;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    border-radius: 0;
+    /* plate overhang compensation, same idea as button.engage */
+    margin: 0 6px 6px 0;
+}
+button.primary::before,
+button.secondary::before,
+button.danger::before,
+.pick_btn::before,
+.manual_btn::before,
+.errline button::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: light-dark(#ffffff, #232b37);
+    box-shadow: 0 0 3px 3px rgba(0, 0, 0, 0.04);
+    transition: background 0.15s, filter 0.15s;
+}
+button.primary::after,
+button.secondary::after,
+button.danger::after,
+.pick_btn::after,
+.manual_btn::after,
+.errline button::after {
+    content: "";
+    position: absolute;
+    z-index: -2;
+    top: 6px;
+    left: 6px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right,
+        light-dark(#c6d0df, #46536b),
+        light-dark(#8fa0b8, #232b37));
+    transition: filter 0.3s;
+}
+
+/* variant faces + plates */
+button.primary {
+    /* white face in both themes, like engage */
+    color: #1c2433;
+}
+button.primary::before {
+    background: #fff;
+}
+button.primary::after {
+    background: linear-gradient(to right, #ff060e, #0b399a);
+}
+button.danger {
+    color: #fff;
+}
+button.danger::before {
+    background: var(--danger);
+}
+button.danger::after {
+    background: linear-gradient(to right,
+        light-dark(#b02c24, #7a2620),
+        light-dark(#7f1d18, #4e1b17));
+}
+
+/* hover: cancel the base grey background, respond on the face/plate instead */
+button.primary:hover:enabled,
+button.secondary:hover:enabled,
+button.danger:hover:enabled,
+.pick_btn:hover,
+.manual_btn:hover,
+.errline button:hover:enabled {
+    background: transparent;
+}
+button.primary:hover:enabled::after {
+    filter: brightness(1.4);
+}
+/* hover glow: the nav_system_on pale red→blue wash over the face */
+button.secondary:hover:enabled::before,
+.pick_btn:hover::before,
+.manual_btn:hover::before,
+.errline button:hover:enabled::before {
+    background:
+        linear-gradient(120deg,
+            light-dark(#fbe4e3, rgba(255, 70, 64, 0.14)),
+            light-dark(#e4e9f8, rgba(70, 110, 246, 0.22))),
+        light-dark(#ffffff, #232b37);
+}
+button.danger:hover:enabled::before {
+    filter: brightness(1.12);
+}
+
+/* press down onto the plate, same travel as engage */
+button.primary:active:enabled,
+button.secondary:active:enabled,
+button.danger:active:enabled,
+.pick_btn:active,
+.manual_btn:active,
+.errline button:active:enabled {
+    transform: translate(3px, 3px);
+}
+
+button.primary:disabled,
+button.secondary:disabled,
+button.danger:disabled {
+    background: transparent;
+}
+button.primary:disabled {
+    color: #1c2433;
+}
+button.primary:disabled::after {
+    filter: grayscale(1) brightness(0.8);
+}
+
+/* flat utility buttons just join the square language */
+button.ghost,
+button.close,
+button.danger_outline {
+    border-radius: 0;
+}
+

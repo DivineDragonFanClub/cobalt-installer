@@ -15,6 +15,20 @@ use dioxus::{logger::tracing, prelude::*};
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 const SAMMIE: Asset = asset!("/assets/SAMMIE.png");
+// EB Garamond (SIL OFL), our stand-in for the FE Engage site's Garamond
+// Premier Pro, which is Adobe-licensed and can't be bundled. Variable weight
+// 400-800, latin subset. The @font-face lives in App so the url survives
+// asset hashing.
+const EB_GARAMOND: Asset = asset!("/assets/fonts/EBGaramond.woff2");
+// The in-game menu pointer (») from the user's own Engage dump, shown next to
+// the active sidebar item. Injected below alongside the font so the hashed
+// asset url can reach CSS.
+const ENGAGE_POINTER: Asset = asset!("/assets/engage_pointer.png");
+// Somniel facility icons for the sidebar (same dump as the pointer): the
+// forge, the market and the bedroom. Tinted via CSS mask like the pointer.
+const ICON_INSTALL: Asset = asset!("/assets/icon_install.png");
+const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
+const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 
 #[cfg(feature = "desktop")]
 use dirs::home_dir;
@@ -429,6 +443,17 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Style {
+            {format!(
+                "@font-face {{ font-family: \"EB Garamond\"; src: url(\"{EB_GARAMOND}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
+                 .nav_item::before {{ content: \"\"; width: 14px; height: 12px; flex-shrink: 0; background-color: #b39347; -webkit-mask: url(\"{ENGAGE_POINTER}\") no-repeat center / contain; mask: url(\"{ENGAGE_POINTER}\") no-repeat center / contain; }}\n\
+                 .nav_item.active::before {{ background-color: light-dark(#c22a30, #ff7a70); }}\n\
+                 .nav_item:disabled::before {{ opacity: 0.4; }}\n\
+                 .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
+                 .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
+                 .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}"
+            )}
+        }
         Hero {}
 
     }
@@ -447,6 +472,47 @@ fn does_engage_mods_folder_exist(path: impl AsRef<Path>) -> bool {
     mods_path.exists()
 }
 
+
+// Footer theme switcher, cycling auto → light → dark. "auto" follows the OS;
+// the other two force a scheme by setting data-theme on <html>, which flips the
+// light-dark() tokens in main.css. The choice is remembered across launches.
+#[cfg(feature = "desktop")]
+#[component]
+fn ThemeToggle() -> Element {
+    let mut theme = use_storage::<LocalStorage, String>("theme".into(), || "auto".to_string());
+
+    // Apply on startup and whenever the user cycles the toggle.
+    use_effect(move || {
+        let js = match theme().as_str() {
+            t @ ("light" | "dark") => format!("document.documentElement.dataset.theme = '{t}';"),
+            _ => "delete document.documentElement.dataset.theme;".to_string(),
+        };
+        document::eval(&js);
+    });
+
+    let (icon, label, next) = match theme().as_str() {
+        "light" => (icons::sun(13), "Light", "dark"),
+        "dark" => (icons::moon(13), "Dark", "auto"),
+        _ => (icons::monitor(13), "Auto", "light"),
+    };
+
+    rsx! {
+        button {
+            class: "theme_toggle",
+            title: "Theme: auto follows your system. Click to switch.",
+            onclick: move |_| theme.set(next.to_string()),
+            {icon}
+            span { "{label}" }
+        }
+    }
+}
+
+// The Android build keeps the OS scheme; no toggle yet.
+#[cfg(not(feature = "desktop"))]
+#[component]
+fn ThemeToggle() -> Element {
+    rsx! {}
+}
 
 #[component]
 pub fn Hero() -> Element {
@@ -487,6 +553,8 @@ pub fn Hero() -> Element {
                     span { "v{env!(\"CARGO_PKG_VERSION\")}" }
                     span { class: "sep", "·" }
                     a { href: "https://discord.gg/BH6XhKsKdS", "Get help" }
+                    span { class: "sep", "·" }
+                    ThemeToggle {}
                 }
             }
         }
@@ -578,7 +646,7 @@ fn Body(status_message: Signal<String>) -> Element {
                 button {
                     class: if active_tab() == Tab::Install { "nav_item active" } else { "nav_item" },
                     onclick: move |_| active_tab.set(Tab::Install),
-                    span { class: "nav_icon", {icons::download(18)} }
+                    span { class: "nav_icon game ico_install" }
                     span { class: "nav_label", "Install Cobalt" }
                 }
                 button {
@@ -586,7 +654,7 @@ fn Body(status_message: Signal<String>) -> Element {
                     disabled: !cobalt_ready,
                     title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
                     onclick: move |_| active_tab.set(Tab::Browse),
-                    span { class: "nav_icon", {icons::search(18)} }
+                    span { class: "nav_icon game ico_browse" }
                     span { class: "nav_label", "Browse Mods" }
                     if !cobalt_ready {
                         span { class: "nav_lock", {icons::lock(13)} }
@@ -597,7 +665,7 @@ fn Body(status_message: Signal<String>) -> Element {
                     disabled: !cobalt_ready,
                     title: if cobalt_ready { "" } else { "Install Cobalt first to manage mods" },
                     onclick: move |_| active_tab.set(Tab::MyMods),
-                    span { class: "nav_icon", {icons::package(18)} }
+                    span { class: "nav_icon game ico_mymods" }
                     span { class: "nav_label", "My Mods" }
                     if !cobalt_ready {
                         span { class: "nav_lock", {icons::lock(13)} }
@@ -711,7 +779,7 @@ fn Onboarding(
                             span { "Cobalt is installed on {installation_type()}. You're all set!" }
                         }
                         button {
-                            class: "primary",
+                            class: "engage",
                             onclick: move |_| onboarded.set(true),
                             "Continue to mods"
                         }
@@ -720,7 +788,7 @@ fn Onboarding(
                             "Cobalt isn't installed on {installation_type()} yet. Install it here to continue."
                         }
                         div { class: "action_zone_buttons",
-                            button { class: "primary", onclick: install_cobalt, "Install Cobalt" }
+                            button { class: "engage", onclick: install_cobalt, "Install Cobalt" }
                         }
                         code { class: "status",
                             "Status: "
@@ -878,7 +946,7 @@ fn Controls(
             div { class: "actions_row",
                 button {
                     id: "install_button",
-                    class: "primary",
+                    class: "engage",
                     onclick: install_cobalt,
                     disabled: !is_install_ready,
                     "Install Cobalt"
@@ -987,7 +1055,7 @@ fn Controls(mut status_message: Signal<String>) -> Element {
             div { class: "action_zone_buttons",
                 button {
                     id: "install_button",
-                    class: "primary",
+                    class: "engage",
                     onclick: install_cobalt,
                     disabled: !is_install_ready,
                     "Install Cobalt"

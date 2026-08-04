@@ -22,24 +22,8 @@ fn stroke(size: u32, children: Element) -> Element {
     }
 }
 
-// Down arrow into a tray. Used for the Install section.
-pub fn download(size: u32) -> Element {
-    stroke(size, rsx! {
-        path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
-        polyline { points: "7 10 12 15 17 10" }
-        line { x1: "12", y1: "15", x2: "12", y2: "3" }
-    })
-}
-
-// Magnifying glass. Used for the Browse section.
-pub fn search(size: u32) -> Element {
-    stroke(size, rsx! {
-        circle { cx: "11", cy: "11", r: "8" }
-        line { x1: "21", y1: "21", x2: "16.65", y2: "16.65" }
-    })
-}
-
-// A parcel box. Used for the My Mods section and the empty state.
+// A parcel box. Used for the empty state. (The sidebar now uses game-texture
+// icons masked in CSS, see ICON_* in main.rs.)
 pub fn package(size: u32) -> Element {
     stroke(size, rsx! {
         path { d: "m7.5 4.27 9 5.15" }
@@ -99,5 +83,35 @@ pub fn star(size: u32) -> Element {
 pub fn check(size: u32) -> Element {
     stroke(size, rsx! {
         polyline { points: "20 6 9 17 4 12" }
+    })
+}
+
+// Sun, moon and monitor: the three states of the footer theme toggle
+// (light, dark, follow the system).
+pub fn sun(size: u32) -> Element {
+    stroke(size, rsx! {
+        circle { cx: "12", cy: "12", r: "4" }
+        path { d: "M12 2v2" }
+        path { d: "M12 20v2" }
+        path { d: "m4.93 4.93 1.41 1.41" }
+        path { d: "m17.66 17.66 1.41 1.41" }
+        path { d: "M2 12h2" }
+        path { d: "M20 12h2" }
+        path { d: "m6.34 17.66-1.41 1.41" }
+        path { d: "m19.07 4.93-1.41 1.41" }
+    })
+}
+
+pub fn moon(size: u32) -> Element {
+    stroke(size, rsx! {
+        path { d: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" }
+    })
+}
+
+pub fn monitor(size: u32) -> Element {
+    stroke(size, rsx! {
+        rect { width: "20", height: "14", x: "2", y: "3", rx: "2" }
+        line { x1: "8", x2: "16", y1: "21", y2: "21" }
+        line { x1: "12", x2: "12", y1: "17", y2: "21" }
     })
 }

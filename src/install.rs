@@ -184,6 +184,49 @@ fn classify_source(config: &InstalledConfig) -> ModSource {
     }
 }
 
+// Read a zipped mod's config.yaml without unpacking the archive. Opening the zip only parses the
+// central directory, and we search by entry name alone, so exactly one entry is ever decompressed.
+//
+// Same shallowest-marker rule as root_prefix: a re-zipped mod can bury its config under a wrapper
+// folder, and a config nested deeper (a bundled sub-mod) must not win over the real one above it.
+fn zip_config(path: &Path) -> Option<InstalledConfig> {
+    // A config.yaml is a handful of lines. Anything past this isn't one, so don't spend the memory.
+    const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
+
+    let mut best: Option<(usize, String)> = None;
+    for name in archive.file_names() {
+        if name.starts_with("__MACOSX/") {
+            continue;
+        }
+        // config.yaml is a file, so it has to be the whole last component. A directory entry ends
+        // in '/' and leaves an empty leaf, which never matches.
+        let leaf = name.rsplit('/').next().unwrap_or(name);
+        if !leaf.eq_ignore_ascii_case("config.yaml") {
+            continue;
+        }
+        let depth = name.matches('/').count();
+        let shallower = match &best {
+            Some((d, _)) => depth < *d,
+            None => true,
+        };
+        if shallower {
+            best = Some((depth, name.to_string()));
+        }
+    }
+    let (_, name) = best?;
+
+    let entry = archive.by_name(&name).ok()?;
+    if entry.size() > MAX_CONFIG_BYTES {
+        return None;
+    }
+    // take() on top of the size check: the header's size is a claim until we've actually read it.
+    let mut text = String::new();
+    entry.take(MAX_CONFIG_BYTES).read_to_string(&mut text).ok()?;
+    serde_yaml::from_str::<InstalledConfig>(&text).ok()
+}
+
 // List everything currently installed under engage/mods, config or not. Cobalt loads both folder
 // mods and <Name>.zip mods, so we show both. Sorted by display name so the list is stable.
 pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
@@ -201,11 +244,15 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
         }
         let folder = entry.file_name().to_string_lossy().to_string();
 
-        // Only folder mods can carry a config.yaml. A zipped mod is opaque, treat it as manual.
-        let config = is_dir
-            .then(|| std::fs::read_to_string(path.join("config.yaml")).ok())
-            .flatten()
-            .and_then(|text| serde_yaml::from_str::<InstalledConfig>(&text).ok());
+        // A folder mod keeps its config.yaml on disk, a zipped mod keeps it inside the archive.
+        // Either way we read just that one file, so a zip is never unpacked to list it.
+        let config = if is_dir {
+            std::fs::read_to_string(path.join("config.yaml"))
+                .ok()
+                .and_then(|text| serde_yaml::from_str::<InstalledConfig>(&text).ok())
+        } else {
+            zip_config(&path)
+        };
 
         let (name, author, description, source) = match &config {
             Some(c) => {
@@ -749,6 +796,57 @@ mod tests {
         assert!(!found[1].has_config);
         assert_eq!(found[1].description, None);
         assert_eq!(found[2].source, ModSource::GameBanana(446023));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn scan_reads_config_out_of_a_zipped_mod() {
+        // A zipped mod whose config.yaml sits under a wrapper folder, plus a deeper one from a
+        // bundled sub-mod. The shallower config is the mod's own, so that's the one that wins.
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("Wrapper/inner/config.yaml", opts).unwrap();
+        zip.write_all(b"id: nexus.999\nname: Bundled Sub Mod\n").unwrap();
+        zip.start_file("Wrapper/config.yaml", opts).unwrap();
+        zip.write_all(
+            b"id: gamebanana.446023\nname: Zipped Mod\nauthor: Rosado\ndescription: In a zip\n",
+        )
+        .unwrap();
+        zip.start_file("Wrapper/patches/thing.bin", opts).unwrap();
+        zip.write_all(b"data").unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+
+        let tmp = std::env::temp_dir().join(format!("cobalt_zipcfg_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mods = mods_dir(&tmp);
+        std::fs::create_dir_all(&mods).unwrap();
+        std::fs::write(mods.join("Zipped Mod.zip"), &bytes).unwrap();
+
+        let found = scan_installed_mods(&tmp);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Zipped Mod");
+        assert_eq!(found[0].author.as_deref(), Some("Rosado"));
+        assert_eq!(found[0].description.as_deref(), Some("In a zip"));
+        assert_eq!(found[0].source, ModSource::GameBanana(446023));
+        assert!(found[0].has_config);
+        // The on-disk name stays the .zip itself, that's what we'd delete or open.
+        assert_eq!(found[0].folder, "Zipped Mod.zip");
+
+        // A zip with no config at all still lists, just as a manual mod.
+        let mut plain = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        plain.start_file("patches/thing.bin", opts).unwrap();
+        plain.write_all(b"data").unwrap();
+        let plain = plain.finish().unwrap().into_inner();
+        std::fs::write(mods.join("Plain.zip"), &plain).unwrap();
+
+        // Sorted by name, so the config-less zip lands first.
+        let found = scan_installed_mods(&tmp);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].name, "Plain.zip");
+        assert_eq!(found[0].source, ModSource::Manual);
+        assert!(!found[0].has_config);
+        assert_eq!(found[1].name, "Zipped Mod");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -220,7 +220,8 @@ a:hover {
 #main-container {
     width: 100%;
     flex: 1;
-    padding: 0 28px 24px;
+    /* the desktop layout has no header row above — breathe at the top */
+    padding: 22px 28px 24px;
     display: flex;
     flex-direction: column;
 }
@@ -240,15 +241,31 @@ a:hover {
 #credits .sep {
     opacity: 0.5;
 }
+/* the Discord invite in the footer, replacing the old Get help link */
+.footer_discord {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+}
+/* the mark goes Discord blurple on hover, muted at rest like the label */
+.footer_discord:hover .icon {
+    color: light-dark(#5865f2, #7d88f5);
+}
+.footer_discord:hover {
+    color: light-dark(#5865f2, #8891f5);
+    text-decoration: none;
+}
 
-/* Theme switcher: a small pill next to "Get help", cycling auto → light → dark. */
+/* Theme switcher next to "Get help", cycling auto → light → dark. Same
+   corner curvature as the operational plaque buttons. */
 #credits .theme_toggle {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: 3px;
     color: var(--muted);
     font-size: 12px;
     font-weight: 600;
@@ -258,6 +275,15 @@ a:hover {
     color: var(--text);
     border-color: var(--border-strong);
     background: var(--surface-2);
+}
+/* time-of-day icons from the game (urls injected in main.rs), with a thin
+   dark contour baked into the PNGs so the pale art reads on any background. */
+.tt_icon {
+    width: 15px;
+    height: 15px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
 }
 
 /* ---- Buttons -------------------------------------------------------------- */
@@ -358,82 +384,73 @@ button.close:hover:enabled {
     background: var(--surface-2);
 }
 
-/* The install CTA, an homage to the FE Engage site's .feeg-btn: a white face
-   with the Engage red→blue gradient plate peeking out behind it and a gold
-   arrow. The face stays white in both themes on purpose — it's brand, like
-   the pills over artwork. Square corners are part of the look. */
+/* The install CTA, gradient-border edition: a flat modern face wrapped in a
+   2px band showing the brand red→blue gradient. The band is a translucent
+   gradient (border-box layer) over an underlay background-color — hovering
+   animates only that color, which reads as the border lighting up, plus a
+   soft glow shadow. Gradients themselves can't be transitioned, and filters
+   are banned here (WKWebView fringes animated filters dark). No motion on
+   hover; press keeps the base 1px nudge. */
 button.engage {
+    /* anchor for the ::before unit sprite standing on the left edge */
     position: relative;
-    /* Layering: the button itself has no background — the white face is the
-       z:-1 ::before, the gradient plate the z:-2 ::after. Inside the button's
-       stacking context both paint above its (transparent) background but below
-       the label text. Putting the face on the button itself doesn't work: an
-       element's own background always paints below its negative-z pseudos. */
-    z-index: 0;
-    background: transparent;
-    /* light theme keeps the original white-face look; dark runs the black
-       nameplate variant. The arrow rides --engage-arrow from the token block. */
     color: light-dark(#1c2433, #fff);
-    transition: transform 0.15s;
-    border: none;
-    border-radius: 0;
-    /* the plate overhangs the layout box by 6px down-right; give it back so
-       neighbors and the status line keep their intended gaps */
-    margin: 0 6px 6px 0;
-    /* symmetric padding so the label centers on the face like the original;
-       the arrow floats inside the right padding. Type comes from the base
-       button rule — hero is arrow + gradient, not a different font. */
-    padding: 12px 46px;
-    /* No hover motion on the button itself (animated scale/translate kept
-       flashing in WKWebView) — hover feedback lives on the plate. The press
-       still moves via :active, which is instant and doesn't transition. */
+    border: 2px solid transparent;
+    border-radius: 3px;
+    /* label sits optically centered between the sprite band (ends ~68px)
+       and the arrow's right band */
+    padding: 12px 56px 12px 76px;
+    background:
+        var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+    box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0), rgba(130, 150, 255, 0));
+    transition: background-color 0.35s, box-shadow 0.35s;
 }
-/* Face: white in light theme (the original look), black nameplate in dark.
-   The arrow rides as the face's background image. */
+/* The unit sprite standing on the button, like the site's クラン button: feet
+   near the bottom, head poking past the top edge. Image url is injected from
+   main.rs (hashed asset). Decorative — clicks pass through. */
 button.engage::before {
     content: "";
     position: absolute;
-    z-index: -1;
-    inset: 0;
-    background: light-dark(#ffffff, #0c0e13) var(--engage-arrow) no-repeat right 16px center / 10px 10px;
-    box-shadow: 0 0 4px 4px light-dark(rgba(20, 28, 40, 0.09), rgba(0, 0, 0, 0.4));
-}
-/* The gradient plate, peeking out 6px down-right behind the face. */
-button.engage::after {
-    content: "";
-    position: absolute;
-    z-index: -2;
-    top: 6px;
+    /* set per install view via inline style, so it can change per mount
+       (the injected document::Style can't hot-swap) */
+    background-image: var(--hero-sprite-light);
     left: 6px;
-    width: 100%;
-    height: 100%;
-    /* Filter-free brighten: the gradient is slightly translucent over a
-       background-color that fades dark→white on hover. Animating brightness()
-       put the plate on an offscreen filter surface whose edges fringe dark in
-       WebKit (the "black glow"). background-color animation is plain paint. */
-    background-image: linear-gradient(to right, rgba(255, 6, 14, 0.8), rgba(11, 57, 154, 0.8));
-    background-color: #351523;
-    transition: background-color 0.5s;
+    bottom: 3px;
+    /* the cropped sprites are ~31×27 — a 2× integer scale keeps the pixels
+       even; the box overflows the button top like the site's クラン character */
+    width: 62px;
+    height: 54px;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: contain;
+    image-rendering: pixelated;
+    pointer-events: none;
 }
+/* dark theme fields the Fell (ShadowLord) form — same two-selector pattern
+   as the arrow so the footer toggle wins in both directions */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) button.engage::before {
+        background-image: var(--hero-sprite-dark);
+    }
+}
+[data-theme="dark"] button.engage::before {
+    background-image: var(--hero-sprite-dark);
+}
+
+/* hover re-declares the layer stack because the base button hover's
+   background shorthand would otherwise wipe it (and its border-color would
+   paint over the gradient band) */
 button.engage:hover:enabled {
-    /* the global button hover would tint the (transparent) background */
-    background: transparent;
-    /* snappy grow: rides the base 0.05s transform transition — long scale
-       animations re-raster visibly in WKWebView, 2-3 frames don't */
-    transform: scale(1.02);
-}
-button.engage:hover:enabled::after {
+    border-color: transparent;
+    background:
+        var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #fff;
-}
-/* Press down onto the plate instead of the default 1px nudge. */
-button.engage:active:enabled {
-    transform: translate(3px, 3px);
-}
-button.engage:disabled {
-    background: transparent;
-}
-button.engage:disabled::after {
-    filter: grayscale(1) brightness(0.8);
+    box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
 }
 
 /* ---- Sidebar nav ---------------------------------------------------------- */
@@ -443,10 +460,12 @@ button.engage:disabled::after {
     gap: 20px;
 }
 .sidebar {
-    width: 210px;
+    width: 228px;
     flex-shrink: 0;
+    /* pin exactly at the resting offset (#main-container's 22px top padding)
+       so scrolling never shifts the panel before it sticks */
     position: sticky;
-    top: 16px;
+    top: 22px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -455,10 +474,43 @@ button.engage:disabled::after {
     border: 1px solid var(--border);
     border-radius: 14px;
 }
+/* Brand bar at the top of the sidebar: Sammie + name. Not a nav item — only
+   the Sammie click does anything (the easter egg). */
+.sidebar_brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 9px 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+.sidebar_brand #sammie {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+}
+.sidebar_brand_text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.sidebar_title {
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+}
+.sidebar_tagline {
+    font-size: 10px;
+    color: var(--faint);
+    line-height: 1.3;
+    white-space: nowrap;
+}
 .nav_item {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 7px;
     width: 100%;
     justify-content: flex-start;
     text-align: left;
@@ -474,12 +526,13 @@ button.engage:disabled::after {
     background: var(--surface-2);
 }
 /* Selected state, after the Engage site's nav "on" glow: a pale red→blue
-   wash with the label in brand navy (the injected style turns the » red). */
+   wash. Text keeps its normal color — the wash alone marks selection. */
 .nav_item.active {
     background: linear-gradient(120deg,
         light-dark(#fbe4e3, rgba(255, 70, 64, 0.16)),
         light-dark(#e4e9f8, rgba(70, 110, 246, 0.24)));
-    color: light-dark(#0b399a, #d9e0f7);
+    /* full text color when selected, the lighter grey otherwise */
+    color: var(--text);
     font-weight: 700;
 }
 /* Keep the active item looking active on hover instead of falling back to the grey hover. */
@@ -487,17 +540,6 @@ button.engage:disabled::after {
     background: linear-gradient(120deg,
         light-dark(#f9d9d7, rgba(255, 70, 64, 0.24)),
         light-dark(#dae1f6, rgba(70, 110, 246, 0.34)));
-    color: light-dark(#0b399a, #e6ebfa);
-}
-/* The site runs the brand gradient across the selected label's glyphs too:
-   red letters fading into navy. currentColor still paints the icon. */
-.nav_item.active .nav_label {
-    background: linear-gradient(to right,
-        light-dark(#b3232e, #ff9088),
-        light-dark(#0b399a, #9fb4ff));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
 }
 .nav_item:disabled {
     color: var(--faint);
@@ -824,7 +866,8 @@ input:focus {
     font-size: 11px;
     font-weight: 600;
     padding: 2px 8px;
-    border-radius: 999px;
+    /* same corner curvature as the operational plaque buttons */
+    border-radius: 3px;
     line-height: 1.6;
     white-space: nowrap;
 }
@@ -1378,10 +1421,6 @@ input:focus {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 13px 16px;
-    transition: border-color 0.15s;
-}
-.installed_row:hover {
-    border-color: var(--border-strong);
 }
 .installed_info {
     flex: 1;
@@ -1422,6 +1461,38 @@ input:focus {
     padding-top: 2px;
 }
 
+/* ---- Bond fragments easter egg modal -------------------------------------- */
+.bonds_overlay {
+    position: fixed;
+    inset: 0;
+    background: light-dark(rgba(25, 32, 45, 0.45), rgba(0, 0, 0, 0.7));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadein 0.18s ease;
+}
+.bonds_modal {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 26px 36px;
+    border: 2px solid transparent;
+    background:
+        linear-gradient(var(--surface), var(--surface)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+    box-shadow: var(--shadow-lg);
+}
+.bonds_modal img {
+    width: 40px;
+}
+.bonds_text {
+    margin: 0;
+    font-weight: 600;
+}
+
 /* ---- Responsive ----------------------------------------------------------- */
 /* Below this the sidebar becomes a horizontal bar above the content. */
 @media (max-width: 720px) {
@@ -1432,6 +1503,10 @@ input:focus {
         position: static;
         width: 100%;
         flex-direction: row;
+    }
+    /* no room for the brand when the sidebar collapses to a bar */
+    .sidebar_brand {
+        display: none;
     }
     .nav_item {
         flex: 1;
@@ -1460,14 +1535,17 @@ input:focus {
 }
 
 /* ---- Engage button system --------------------------------------------------
-   The .feeg-btn treatment rolled out across the app. Lives at the end of the
-   file so it overrides the older per-component button rules above. Tiers:
-   - engage           hero CTAs: white face, brand gradient plate, arrow, serif
-   - primary          standard CTAs: white face, brand gradient plate, no arrow
-   - secondary, .pick_btn, .manual_btn, .errline button   slate gradient plate
-   - danger           red face, dark red gradient plate
-   All plates share the engage geometry: 6px offset, 3px press travel.
-   - ghost, close, danger_outline   flat utility, squared corners only
+   Gradient-border edition: flat faces wrapped in a 2px gradient band. The
+   band is a translucent gradient (border-box layer) over an underlay
+   background-color; hover animates only that color plus a soft glow shadow —
+   lighting, never motion or filters (WKWebView fringes animated filters and
+   flashes animated scale). Hover rules re-declare the full layer stack
+   because the base button hover's background shorthand would wipe it. Tiers:
+   - engage    hero CTA: brand red→blue band, arrow (in the Buttons section)
+   - primary   standard CTA: brand band, arrow, standard padding
+   - secondary, .pick_btn, .manual_btn, .errline button   slate band
+   - danger    red face, deep red band
+   - ghost, danger_outline   operational plaques (below); close stays flat
    nav_item, .source_toggle .src and .theme_toggle stay pills on purpose:
    they're navigation/chrome, not actions. */
 button.primary,
@@ -1476,126 +1554,76 @@ button.danger,
 .pick_btn,
 .manual_btn,
 .errline button {
-    position: relative;
-    z-index: 0;
-    background: transparent;
     color: var(--text);
-    border: none;
-    border-radius: 0;
-    /* plate overhang compensation, same idea as button.engage */
-    margin: 0 6px 6px 0;
-    /* slower grow than the base 0.05s, still short enough to hide re-raster */
-    transition: transform 0.15s;
+    border: 2px solid transparent;
+    border-radius: 3px;
+    background:
+        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(100deg,
+            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
+    background-color: light-dark(#8b9aae, #3c4a5e);
+    box-shadow: 0 0 12px rgba(80, 100, 130, 0);
+    transition: background-color 0.35s, box-shadow 0.35s;
 }
-button.primary::before,
-button.secondary::before,
-button.danger::before,
-.pick_btn::before,
-.manual_btn::before,
-.errline button::before {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    inset: 0;
-    background: light-dark(#ffffff, #232b37);
-    /* the site's soft halo shadow (0 0 4px 4px), tuned per theme so faces
-       don't melt into flat backgrounds */
-    box-shadow: 0 0 4px 4px light-dark(rgba(20, 28, 40, 0.09), rgba(0, 0, 0, 0.4));
-    transition: background 0.15s, filter 0.15s;
-}
-button.primary::after,
-button.secondary::after,
-button.danger::after,
-.pick_btn::after,
-.manual_btn::after,
-.errline button::after {
-    content: "";
-    position: absolute;
-    z-index: -2;
-    top: 6px;
-    left: 6px;
-    width: 100%;
-    height: 100%;
-    /* light→grey gradient at rest; hover brightens the whole plate via the
-       white underlay (translucent stops, filter-free like the hero plate) */
-    background-image: linear-gradient(100deg,
-        light-dark(rgba(217, 223, 233, 0.82), rgba(90, 104, 127, 0.82)),
-        light-dark(rgba(123, 139, 163, 0.82), rgba(22, 28, 38, 0.82)));
-    background-color: light-dark(#aab5c6, #38424f);
-    transition: background-color 0.4s;
-}
-
-/* variant faces + plates */
-button.primary {
-    /* white face in both themes, like engage */
-    color: #1c2433;
-    /* room for the arrow riding the face's right edge */
-    padding-right: 34px;
-}
-button.primary::before {
-    background: #fff var(--engage-arrow) no-repeat right 12px center / 9px 9px;
-}
-button.primary::after {
-    background-image: linear-gradient(to right, rgba(255, 6, 14, 0.8), rgba(11, 57, 154, 0.8));
-    background-color: #351523;
-    transition: background-color 0.5s;
-}
-button.danger {
-    color: #fff;
-}
-button.danger::before {
-    background: var(--danger);
-}
-button.danger::after {
-    background: linear-gradient(to right,
-        light-dark(#b02c24, #7a2620),
-        light-dark(#7f1d18, #4e1b17));
-}
-
-/* hover: cancel the base grey background, respond on the face/plate instead */
-button.primary:hover:enabled,
 button.secondary:hover:enabled,
-button.danger:hover:enabled,
 .pick_btn:hover,
 .manual_btn:hover,
 .errline button:hover:enabled {
-    background: transparent;
-    transform: scale(1.02);
-}
-button.primary:hover:enabled::after {
+    border-color: transparent;
+    background:
+        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(100deg,
+            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
     background-color: #fff;
-}
-/* hover leaves the face alone; the plate brightens */
-button.secondary:hover:enabled::after,
-.pick_btn:hover::after,
-.manual_btn:hover::after,
-.errline button:hover:enabled::after {
-    background-color: #fff;
-}
-button.danger:hover:enabled::before {
-    filter: brightness(1.12);
+    box-shadow: 0 0 12px light-dark(rgba(90, 110, 140, 0.22), rgba(150, 170, 200, 0.18));
 }
 
-/* press down onto the plate, same travel as engage */
-button.primary:active:enabled,
-button.secondary:active:enabled,
-button.danger:active:enabled,
-.pick_btn:active,
-.manual_btn:active,
-.errline button:active:enabled {
-    transform: translate(3px, 3px);
+/* primary: the brand band + arrow, standard padding */
+button.primary {
+    color: light-dark(#1c2433, #fff);
+    padding-right: 34px;
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
 }
-
-button.primary:disabled,
-button.secondary:disabled,
-button.danger:disabled {
-    background: transparent;
+button.primary:hover:enabled {
+    border-color: transparent;
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 12px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
 }
+/* legacy mid-file primary:disabled sets its own colors; reassert the stack */
 button.primary:disabled {
-    color: #1c2433;
+    color: light-dark(#1c2433, #fff);
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
 }
-button.primary:disabled::after {
-    filter: grayscale(1) brightness(0.8);
+
+/* danger: filled red face, deep red band */
+button.danger {
+    color: #fff;
+    background:
+        linear-gradient(var(--danger), var(--danger)) padding-box,
+        linear-gradient(to right, rgba(150, 40, 34, 0.85), rgba(80, 20, 16, 0.85)) border-box;
+    background-color: #200a08;
+}
+button.danger:hover:enabled {
+    border-color: transparent;
+    background:
+        linear-gradient(var(--danger), var(--danger)) padding-box,
+        linear-gradient(to right, rgba(150, 40, 34, 0.85), rgba(80, 20, 16, 0.85)) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 12px light-dark(rgba(180, 50, 42, 0.28), rgba(255, 120, 110, 0.22));
 }
 
 /* the close X stays flat, just squared */

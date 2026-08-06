@@ -21,6 +21,9 @@ reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tl
 [target.'cfg(not(target_os = "android"))'.dependencies]
 dioxus-desktop = "0.7.9"
 dioxus-sdk = { version = "0.7.0", features = ["storage"] }
+# dev bridge: lets external tools (MCP debuggers) eval JS in the running app.
+# desktop-only, and the wiring is additionally gated to debug_assertions.
+dioxus-inspector = { version = "0.1.2", optional = true }
 # The mod browser: serde for the GameBanana API + config.yaml, serde_yaml to write configs
 # Cobalt can read, futures-util to consume the download byte stream.
 serde = { version = "1", features = ["derive"] }
@@ -54,7 +57,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 [features]
 default = ["desktop"]
 web = ["dioxus/web"]
-desktop = ["dioxus/desktop"]
+desktop = ["dioxus/desktop", "dep:dioxus-inspector"]
 mobile = ["dioxus/mobile"]
 
 [profile]

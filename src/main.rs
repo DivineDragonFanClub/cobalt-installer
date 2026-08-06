@@ -21,7 +21,7 @@ const SAMMIE: Asset = asset!("/assets/SAMMIE.png");
 const INTER: Asset = asset!("/assets/fonts/Inter.woff2");
 // Somniel facility icons for the sidebar (same dump as the pointer): the
 // forge, the market and the bedroom. Tinted via CSS mask like the pointer.
-const ICON_INSTALL: Asset = asset!("/assets/icon_install.png");
+const ICON_INSTALL: Asset = asset!("/assets/icon_forge.png");
 const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
 const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 // Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
@@ -29,6 +29,64 @@ const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
 // Bond fragment crystal, trailing the Sammie-click easter egg message.
 const ICON_BONDS: Asset = asset!("/assets/icon_bonds.png");
+// Somniel time-of-day icons for the theme toggle: Day (light), Night (dark),
+// Evening (auto — the in-between).
+const ICON_DAY: Asset = asset!("/assets/icon_day2.png");
+const ICON_NIGHT: Asset = asset!("/assets/icon_night2.png");
+const ICON_EVENING: Asset = asset!("/assets/icon_evening2.png");
+// Alear's map sprites, standing on the hero Install button like the site's
+// クラン button character. The install views cycle the costumes per mount.
+const SPRITE_LUEUR: Asset = asset!("/assets/sprite_lueur.png");
+const SPRITE_LUEUR_F: Asset = asset!("/assets/sprite_lueur_f.png");
+const SPRITE_LUEUR_PROMO: Asset = asset!("/assets/sprite_lueur_promo.png");
+const SPRITE_LUEUR_F_PROMO: Asset = asset!("/assets/sprite_lueur_f_promo.png");
+const SPRITE_FELL: Asset = asset!("/assets/sprite_fell.png");
+const SPRITE_FELL_F: Asset = asset!("/assets/sprite_fell_f.png");
+
+// The Discord mark (filled). Lives here rather than the desktop-only icons
+// module because the footer link is shared with the Android build.
+fn discord_icon(size: u32) -> Element {
+    rsx! {
+        svg {
+            class: "icon",
+            width: "{size}",
+            height: "{size}",
+            view_box: "0 0 24 24",
+            fill: "currentColor",
+            stroke: "none",
+            path { d: "M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" }
+        }
+    }
+}
+
+// Alear for a mounting install view, fed to CSS as (light, dark) sprite
+// variables — dark theme shows the matching-gender Fell form. Cycles base M →
+// base F → Divine Dragon M → Divine Dragon F per mount, no randomness. On
+// desktop the slot persists with the other prefs, so the cycle continues
+// across launches; Android falls back to a per-session counter.
+fn use_hero_sprite() -> (Asset, Asset) {
+    #[cfg(feature = "desktop")]
+    let slot = {
+        let mut stored = use_storage::<LocalStorage, usize>("hero_sprite_slot".into(), || 0);
+        use_hook(move || {
+            let s = stored() % 4;
+            stored.set((s + 1) % 4);
+            s
+        })
+    };
+    #[cfg(not(feature = "desktop"))]
+    let slot = use_hook(|| {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: AtomicUsize = AtomicUsize::new(0);
+        SLOT.fetch_add(1, Ordering::Relaxed) % 4
+    });
+    match slot {
+        0 => (SPRITE_LUEUR, SPRITE_FELL),
+        1 => (SPRITE_LUEUR_F, SPRITE_FELL_F),
+        2 => (SPRITE_LUEUR_PROMO, SPRITE_FELL),
+        _ => (SPRITE_LUEUR_F_PROMO, SPRITE_FELL_F),
+    }
+}
 
 #[cfg(feature = "desktop")]
 use dirs::home_dir;
@@ -440,18 +498,39 @@ fn App() -> Element {
         let window = use_window();
         window.set_always_on_top(false);
     }
+    // Dev-only inspector bridge: external tools eval JS in the running app
+    // over HTTP. Never compiled into release builds.
+    #[cfg(all(feature = "desktop", debug_assertions))]
+    use_hook(|| {
+        let mut eval_rx = dioxus_inspector::start_bridge(9223, "CobaltInstaller");
+        spawn(async move {
+            while let Some(cmd) = eval_rx.recv().await {
+                let result = document::eval(&cmd.script).await;
+                let response = match result {
+                    Ok(val) => dioxus_inspector::EvalResponse::success(val.to_string()),
+                    Err(e) => dioxus_inspector::EvalResponse::error(e.to_string()),
+                };
+                let _ = cmd.response_tx.send(response);
+            }
+        });
+    });
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Style {
-            {format!(
-                "@font-face {{ font-family: \"Inter\"; src: url(\"{INTER}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
-                 .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
-                 .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
-                 .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\
-                 .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
-                 .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}"
-            )}
+            {
+                format!(
+                    "@font-face {{ font-family: \"Inter\"; src: url(\"{INTER}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
+                         .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
+                         .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
+                         .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\
+                 .tt_day {{ background-image: url(\"{ICON_DAY}\"); }}\n\
+                 .tt_night {{ background-image: url(\"{ICON_NIGHT}\"); }}\n\
+                 .tt_evening {{ background-image: url(\"{ICON_EVENING}\"); }}\n\
+                         .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                         .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}",
+                )
+            }
         }
         Hero {}
 
@@ -489,10 +568,10 @@ fn ThemeToggle() -> Element {
         document::eval(&js);
     });
 
-    let (icon, label, next) = match theme().as_str() {
-        "light" => (icons::sun(13), "Light", "dark"),
-        "dark" => (icons::moon(13), "Dark", "auto"),
-        _ => (icons::monitor(13), "Auto", "light"),
+    let (icon_class, label, next) = match theme().as_str() {
+        "light" => ("tt_icon tt_day", "Light", "dark"),
+        "dark" => ("tt_icon tt_night", "Dark", "auto"),
+        _ => ("tt_icon tt_evening", "Auto", "light"),
     };
 
     rsx! {
@@ -500,7 +579,7 @@ fn ThemeToggle() -> Element {
             class: "theme_toggle",
             title: "Theme: auto follows your system. Click to switch.",
             onclick: move |_| theme.set(next.to_string()),
-            {icon}
+            span { class: icon_class }
             span { "{label}" }
         }
     }
@@ -529,20 +608,28 @@ pub fn Hero() -> Element {
 
     rsx! {
         div { id: "hero",
-            header { id: "app_header",
-                img {
-                    id: "sammie",
-                    src: SAMMIE,
-                    alt: "Sammie stares at you, judgingly",
-                    onclick: move |_| {
-                        num_clicks.set(num_clicks() + 1);
-                    },
+            // Desktop moved the brand into the sidebar (see Body); the header
+            // row only remains on Android.
+            if cfg!(not(feature = "desktop")) {
+                header { id: "app_header",
+                    img {
+                        id: "sammie",
+                        src: SAMMIE,
+                        alt: "Sammie stares at you, judgingly",
+                        onclick: move |_| {
+                            num_clicks.set(num_clicks() + 1);
+                        },
+                    }
+                    div { class: "app_header_text",
+                        h1 { "Cobalt Installer" }
+                        p { class: "app_tagline", "Mods for Fire Emblem Engage" }
+                    }
+                    a {
+                        class: "header_help",
+                        href: "https://discord.gg/BH6XhKsKdS",
+                        "Need help?"
+                    }
                 }
-                div { class: "app_header_text",
-                    h1 { "Cobalt Installer" }
-                    p { class: "app_tagline", "Mods for Fire Emblem Engage" }
-                }
-                a { class: "header_help", href: "https://discord.gg/BH6XhKsKdS", "Need help?" }
             }
             div { id: "main-container",
                 Body { status_message }
@@ -551,7 +638,10 @@ pub fn Hero() -> Element {
                     span { class: "sep", "·" }
                     span { "v{env!(\"CARGO_PKG_VERSION\")}" }
                     span { class: "sep", "·" }
-                    a { href: "https://discord.gg/BH6XhKsKdS", "Get help" }
+                    a { class: "footer_discord", href: "https://discord.gg/BH6XhKsKdS",
+                        {discord_icon(13)}
+                        span { "Join the Discord" }
+                    }
                     span { class: "sep", "·" }
                     ThemeToggle {}
                 }
@@ -584,6 +674,16 @@ fn Body(status_message: Signal<String>) -> Element {
     let mut active_tab = use_signal(|| Tab::Install);
     // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
     let mut nxm_status = use_signal(|| None::<String>);
+
+    // The Sammie-click easter egg followed the logo into the sidebar. Every
+    // fifth click pops the (dismissable) bond fragments modal.
+    let mut num_clicks = use_signal(|| 0);
+    let mut show_bonds = use_signal(|| false);
+    use_effect(move || {
+        if num_clicks() > 0 && num_clicks() % 5 == 0 {
+            show_bonds.set(true);
+        }
+    });
     // Set when the user clicks "View" on a mod in My Mods: the Browse tab picks it up, switches to
     // the right source, and opens that mod's detail overlay in-app.
     let mut view_request = use_signal(|| None::<install::ModSource>);
@@ -638,67 +738,108 @@ fn Body(status_message: Signal<String>) -> Element {
             }
         }
         if !onboarded() {
-            Onboarding { status_message, installation_type, user_selected_sdcard_path, onboarded }
+            Onboarding {
+                status_message,
+                installation_type,
+                user_selected_sdcard_path,
+                onboarded,
+            }
         } else {
-        div { class: "app_shell",
-            nav { class: "sidebar",
-                button {
-                    class: if active_tab() == Tab::Install { "nav_item active" } else { "nav_item" },
-                    onclick: move |_| active_tab.set(Tab::Install),
-                    span { class: "nav_icon game ico_install" }
-                    span { class: "nav_label", "Install Cobalt" }
-                }
-                button {
-                    class: if active_tab() == Tab::Browse { "nav_item active" } else { "nav_item" },
-                    disabled: !cobalt_ready,
-                    title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
-                    onclick: move |_| active_tab.set(Tab::Browse),
-                    span { class: "nav_icon game ico_browse" }
-                    span { class: "nav_label", "Browse Mods" }
-                    if !cobalt_ready {
-                        span { class: "nav_lock", {icons::lock(13)} }
-                    }
-                }
-                button {
-                    class: if active_tab() == Tab::MyMods { "nav_item active" } else { "nav_item" },
-                    disabled: !cobalt_ready,
-                    title: if cobalt_ready { "" } else { "Install Cobalt first to manage mods" },
-                    onclick: move |_| active_tab.set(Tab::MyMods),
-                    span { class: "nav_icon game ico_mymods" }
-                    span { class: "nav_label", "My Mods" }
-                    if !cobalt_ready {
-                        span { class: "nav_lock", {icons::lock(13)} }
+            if show_bonds() {
+                div {
+                    class: "bonds_overlay",
+                    onclick: move |_| show_bonds.set(false),
+                    div {
+                        class: "bonds_modal",
+                        onclick: move |e| e.stop_propagation(),
+                        img { src: ICON_BONDS, alt: "Bond fragments" }
+                        p { class: "bonds_text", "50 bond fragments obtained." }
+                        button {
+                            class: "ghost",
+                            onclick: move |_| show_bonds.set(false),
+                            "OK"
+                        }
                     }
                 }
             }
-            div { class: "tab_content",
-                match active_tab() {
-                    Tab::Install => rsx! {
-                        Controls { status_message, installation_type, user_selected_sdcard_path }
-                    },
-                    Tab::Browse => rsx! {
-                        if let Some(root) = sd_root.clone() {
-                            mods_ui::ModBrowser { sd_root: root, view_request }
-                        } else {
-                            div { class: "mod_message", "Pick an install target on the Install tab first." }
+            div { class: "app_shell",
+                nav { class: "sidebar",
+                    // Brand bar: not a nav item — only Sammie reacts (the easter egg).
+                    div { class: "sidebar_brand",
+                        img {
+                            id: "sammie",
+                            src: SAMMIE,
+                            alt: "Sammie stares at you, judgingly",
+                            onclick: move |_| {
+                                num_clicks.set(num_clicks() + 1);
+                            },
                         }
-                    },
-                    Tab::MyMods => rsx! {
-                        if let Some(root) = sd_root.clone() {
-                            installed_ui::MyMods {
-                                sd_root: root,
-                                on_view: move |src| {
-                                    view_request.set(Some(src));
-                                    active_tab.set(Tab::Browse);
-                                },
+                        div { class: "sidebar_brand_text",
+                            span { class: "sidebar_title", "Cobalt Installer" }
+                            span { class: "sidebar_tagline", "Mods for Fire Emblem Engage" }
+                        }
+                    }
+                    button {
+                        class: if active_tab() == Tab::Install { "nav_item active" } else { "nav_item" },
+                        onclick: move |_| active_tab.set(Tab::Install),
+                        span { class: "nav_icon game ico_install" }
+                        span { class: "nav_label", "Install Cobalt" }
+                    }
+                    button {
+                        class: if active_tab() == Tab::Browse { "nav_item active" } else { "nav_item" },
+                        disabled: !cobalt_ready,
+                        title: if cobalt_ready { "" } else { "Install Cobalt first to browse mods" },
+                        onclick: move |_| active_tab.set(Tab::Browse),
+                        span { class: "nav_icon game ico_browse" }
+                        span { class: "nav_label", "Browse Mods" }
+                        if !cobalt_ready {
+                            span { class: "nav_lock", {icons::lock(13)} }
+                        }
+                    }
+                    button {
+                        class: if active_tab() == Tab::MyMods { "nav_item active" } else { "nav_item" },
+                        disabled: !cobalt_ready,
+                        title: if cobalt_ready { "" } else { "Install Cobalt first to manage mods" },
+                        onclick: move |_| active_tab.set(Tab::MyMods),
+                        span { class: "nav_icon game ico_mymods" }
+                        span { class: "nav_label", "My Mods" }
+                        if !cobalt_ready {
+                            span { class: "nav_lock", {icons::lock(13)} }
+                        }
+                    }
+                }
+                div { class: "tab_content",
+                    match active_tab() {
+                        Tab::Install => rsx! {
+                            Controls {
+                                status_message,
+                                installation_type,
+                                user_selected_sdcard_path,
                             }
-                        } else {
-                            div { class: "mod_message", "Pick an install target on the Install tab first." }
-                        }
-                    },
+                        },
+                        Tab::Browse => rsx! {
+                            if let Some(root) = sd_root.clone() {
+                                mods_ui::ModBrowser { sd_root: root, view_request }
+                            } else {
+                                div { class: "mod_message", "Pick an install target on the Install tab first." }
+                            }
+                        },
+                        Tab::MyMods => rsx! {
+                            if let Some(root) = sd_root.clone() {
+                                installed_ui::MyMods {
+                                    sd_root: root,
+                                    on_view: move |src| {
+                                        view_request.set(Some(src));
+                                        active_tab.set(Tab::Browse);
+                                    },
+                                }
+                            } else {
+                                div { class: "mod_message", "Pick an install target on the Install tab first." }
+                            }
+                        },
+                    }
                 }
             }
-        }
         }
     }
 }
@@ -715,6 +856,7 @@ fn Onboarding(
     user_selected_sdcard_path: Signal<String>,
     mut onboarded: Signal<bool>,
 ) -> Element {
+    let (sprite_light, sprite_dark) = use_hero_sprite();
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
 
@@ -744,7 +886,9 @@ fn Onboarding(
     };
 
     rsx! {
-        div { id: "onboarding",
+        div {
+            id: "onboarding",
+            style: "--hero-sprite-light: url('{sprite_light}'); --hero-sprite-dark: url('{sprite_dark}')",
             div { class: "onboard_card",
                 h2 { "Set up your device" }
                 p { class: "onboard_sub",
@@ -753,7 +897,11 @@ fn Onboarding(
 
                 section { class: "panel",
                     div { class: "field",
-                        label { r#for: "onboard_device_select", class: "field_label", "Which device do you use?" }
+                        label {
+                            r#for: "onboard_device_select",
+                            class: "field_label",
+                            "Which device do you use?"
+                        }
                         select {
                             id: "onboard_device_select",
                             class: "field_input",
@@ -772,36 +920,36 @@ fn Onboarding(
                     }
 
                     div { class: "onboard_result",
-                    if cobalt_ready {
-                        div { class: "onboard_status ok",
-                            {icons::check(18)}
-                            span { "Cobalt is installed on {installation_type()}. You're all set!" }
-                        }
-                        button {
-                            class: "engage",
-                            onclick: move |_| onboarded.set(true),
-                            "Continue to mods"
-                        }
-                    } else if target_ready {
-                        div { class: "onboard_status",
-                            "Cobalt isn't installed on {installation_type()} yet. Install it here to continue."
-                        }
-                        div { class: "action_zone_buttons",
-                            button { class: "engage", onclick: install_cobalt, "Install Cobalt" }
-                        }
-                        code { class: if status_message().contains("bond fragments") { "status bonds" } else { "status" },
-                            "Status: "
-                            {status_message}
-                        }
-                    } else {
-                        div { class: "onboard_status",
-                            if installation_type() == "SD Card" {
-                                "Select your SD card folder above to continue."
-                            } else {
-                                "We couldn't find this emulator. Pick your SD card folder instead, or choose another device."
+                        if cobalt_ready {
+                            div { class: "onboard_status ok",
+                                {icons::check(18)}
+                                span { "Cobalt is installed on {installation_type()}. You're all set!" }
+                            }
+                            button {
+                                class: "engage",
+                                onclick: move |_| onboarded.set(true),
+                                "Continue to mods"
+                            }
+                        } else if target_ready {
+                            div { class: "onboard_status",
+                                "Cobalt isn't installed on {installation_type()} yet. Install it here to continue."
+                            }
+                            div { class: "action_zone_buttons",
+                                button { class: "engage", onclick: install_cobalt, "Install Cobalt" }
+                            }
+                            code { class: if status_message().contains("bond fragments") { "status bonds" } else { "status" },
+                                "Status: "
+                                {status_message}
+                            }
+                        } else {
+                            div { class: "onboard_status",
+                                if installation_type() == "SD Card" {
+                                    "Select your SD card folder above to continue."
+                                } else {
+                                    "We couldn't find this emulator. Pick your SD card folder instead, or choose another device."
+                                }
                             }
                         }
-                    }
                     }
                 }
             }
@@ -827,6 +975,7 @@ fn Controls(
     mut installation_type: Signal<String>,
     user_selected_sdcard_path: Signal<String>,
 ) -> Element {
+    let (sprite_light, sprite_dark) = use_hero_sprite();
     // FTP console target: host + port persist across launches, defaulting to sys-ftpd's port.
     let mut ftp_host = use_storage::<LocalStorage, String>("ftp_host".into(), String::new);
     let mut ftp_port = use_storage::<LocalStorage, String>("ftp_port".into(), || "5000".to_string());
@@ -884,7 +1033,9 @@ fn Controls(
     };
 
     rsx! {
-        section { class: "panel",
+        section {
+            class: "panel",
+            style: "--hero-sprite-light: url('{sprite_light}'); --hero-sprite-dark: url('{sprite_dark}')",
             div { class: "panel_head",
                 h2 { class: "panel_title", "Install Cobalt" }
                 p { class: "panel_hint",
@@ -963,7 +1114,9 @@ fn Controls(
                 }
             }
             if status_message() != "Waiting for you" {
-                p { class: if status_message().contains("bond fragments") { "status_line bonds" } else { "status_line" }, {status_message} }
+                p { class: if status_message().contains("bond fragments") { "status_line bonds" } else { "status_line" },
+                    {status_message}
+                }
             }
         }
     }
@@ -975,6 +1128,7 @@ fn Controls(
 #[cfg(target_os = "android")]
 #[component]
 fn Controls(mut status_message: Signal<String>) -> Element {
+    let (sprite_light, sprite_dark) = use_hero_sprite();
     // Seed from any grant the user gave on a previous run.
     let mut tree_uri = use_signal(|| saf::persisted_tree_uri());
 
@@ -1030,9 +1184,7 @@ fn Controls(mut status_message: Signal<String>) -> Element {
     };
 
     rsx! {
-        div {
-            id: "installation_type_container",
-            class: "message_zone first",
+        div { id: "installation_type_container", class: "message_zone first",
             div { "This installs Cobalt into the Eden emulator." }
         }
         div { class: "message_zone second",
@@ -1040,16 +1192,15 @@ fn Controls(mut status_message: Signal<String>) -> Element {
                 div { "Eden folder access granted." }
             } else {
                 div { "First, grant access to Eden's folder." }
-                div { "In the file picker, open the menu (top-left), choose Eden, then tap \"Use this folder\"." }
+                div {
+                    "In the file picker, open the menu (top-left), choose Eden, then tap \"Use this folder\"."
+                }
             }
-            button {
-                class: "secondary",
-                onclick: grant_access,
-                "Grant Eden folder access"
-            }
+            button { class: "secondary", onclick: grant_access, "Grant Eden folder access" }
         }
         div {
             id: "action_zone",
+            style: "--hero-sprite-light: url('{sprite_light}'); --hero-sprite-dark: url('{sprite_dark}')",
             class: {if is_install_ready { "message_zone third" } else { "message_zone disabled" }},
             div { class: "action_zone_buttons",
                 button {
@@ -1095,7 +1246,12 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
     let volumes = mounted_volumes();
     rsx! {
         div { id: "sd_select_button_container", class: "file_pick",
-            label { id: "sd_select_label", class: "pick_btn", r#for: "sd_select", "Choose folder…" }
+            label {
+                id: "sd_select_label",
+                class: "pick_btn",
+                r#for: "sd_select",
+                "Choose folder…"
+            }
             input {
                 id: "sd_select",
                 r#type: "file",
@@ -1124,9 +1280,12 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                     },
                     option { value: "", "Pick a volume…" }
                     for vol in volumes {
-                        option {
-                            value: "{vol.display()}",
-                            {vol.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| vol.display().to_string())}
+                        option { value: "{vol.display()}",
+                            {
+                                vol.file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| vol.display().to_string())
+                            }
                         }
                     }
                 }

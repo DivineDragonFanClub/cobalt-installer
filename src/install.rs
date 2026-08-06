@@ -158,6 +158,9 @@ pub struct InstalledMod {
     pub source: ModSource,
     // Total size on disk (folder contents, or the .zip file's size).
     pub size_bytes: u64,
+    // When the mod landed in the folder: creation time where the filesystem
+    // has one (macOS/Windows), else mtime. None if the metadata call fails.
+    pub installed_at: Option<std::time::SystemTime>,
     // Whether the mod carries a config.yaml at all. Hand-dropped mods often don't.
     pub has_config: bool,
     // Full path to the mod folder (or .zip), for opening in the file browser and uninstalling.
@@ -220,6 +223,10 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
         };
 
+        let installed_at = std::fs::metadata(&path)
+            .ok()
+            .and_then(|md| md.created().or_else(|_| md.modified()).ok());
+
         mods.push(InstalledMod {
             folder,
             name,
@@ -227,6 +234,7 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             description,
             source,
             size_bytes,
+            installed_at,
             has_config: config.is_some(),
             path,
         });

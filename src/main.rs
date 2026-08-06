@@ -15,11 +15,10 @@ use dioxus::{logger::tracing, prelude::*};
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 const SAMMIE: Asset = asset!("/assets/SAMMIE.png");
-// EB Garamond (SIL OFL), our stand-in for the FE Engage site's Garamond
-// Premier Pro, which is Adobe-licensed and can't be bundled. Variable weight
-// 400-800, latin subset. The @font-face lives in App so the url survives
-// asset hashing.
-const EB_GARAMOND: Asset = asset!("/assets/fonts/EBGaramond.woff2");
+// Inter (SIL OFL): the UI face for buttons and app-chrome headings. Variable
+// weight 400-800, latin subset. The @font-face lives in App so the url
+// survives asset hashing.
+const INTER: Asset = asset!("/assets/fonts/Inter.woff2");
 // Somniel facility icons for the sidebar (same dump as the pointer): the
 // forge, the market and the bedroom. Tinted via CSS mask like the pointer.
 const ICON_INSTALL: Asset = asset!("/assets/icon_install.png");
@@ -446,7 +445,7 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Style {
             {format!(
-                "@font-face {{ font-family: \"EB Garamond\"; src: url(\"{EB_GARAMOND}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
+                "@font-face {{ font-family: \"Inter\"; src: url(\"{INTER}\") format(\"woff2\"); font-weight: 400 800; font-style: normal; font-display: swap; }}\n\
                  .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
                  .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
                  .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\

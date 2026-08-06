@@ -100,15 +100,13 @@ h1, h2, h3 {
     letter-spacing: -0.01em;
 }
 
-/* App-chrome headings get the display serif (EB Garamond, shipped from
-   main.rs). User content (mod names, cards) stays in the UI sans. The negative
-   tracking above cramps Garamond, so reset it here. */
+/* App-chrome headings use Inter (shipped from main.rs). User content (mod
+   names, cards) stays on the system stack. */
 .app_header_text h1,
 .panel_title,
 .onboard_card h2,
 .my_mods_title h2 {
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    letter-spacing: 0;
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
 }
 
 code {
@@ -188,8 +186,7 @@ a:hover {
     flex-direction: column;
 }
 .app_header_text h1 {
-    /* serif runs small at equal px, so these sizes sit a step above the old sans sizes */
-    font-size: 23px;
+    font-size: 21px;
     font-weight: 700;
     color: var(--text);
 }
@@ -203,10 +200,9 @@ a:hover {
    the file (it's an <a>, so the styles are restated here). */
 .header_help {
     margin-left: auto;
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
     color: light-dark(#2b2517, #e8e0cc);
     background: light-dark(#fdfdfb, #14181f);
     padding: 7px 14px;
@@ -266,12 +262,11 @@ a:hover {
 
 /* ---- Buttons -------------------------------------------------------------- */
 button {
-    /* every button speaks the hero's type: the display serif at 16/700.
-       Hero differentiation is the arrow + gradient plate only. */
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    /* every button speaks the hero's type: Inter at 15/600. Hero
+       differentiation is the arrow + gradient plate only. */
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--text);
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -559,7 +554,7 @@ button.engage:disabled::after {
     max-width: 560px;
 }
 .onboard_card h2 {
-    font-size: 20px;
+    font-size: 18px;
 }
 .onboard_sub {
     color: var(--muted);
@@ -597,7 +592,7 @@ button.engage:disabled::after {
     margin-bottom: 20px;
 }
 .panel_title {
-    font-size: 19px;
+    font-size: 17px;
 }
 .panel_hint {
     margin: 5px 0 0;
@@ -659,10 +654,9 @@ button.engage:disabled::after {
     width: 80px;
 }
 .pick_btn {
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
     display: inline-block;
     padding: 8px 14px;
     background: var(--surface-2);
@@ -798,6 +792,14 @@ input:focus {
 }
 .mod_search_bar input[type="text"] {
     flex: 1;
+}
+/* input and select share one height so the bar reads as a single strip
+   (natural heights differ: input ~42, select ~36) */
+.mod_search_bar input[type="text"],
+.mod_search_bar .category_select {
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 .category_select:disabled {
     opacity: 0.5;
@@ -1274,10 +1276,9 @@ input:focus {
     border-top: 1px solid var(--border);
 }
 .manual_btn {
-    font-family: "EB Garamond", Garamond, "Times New Roman", serif;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
     display: inline-block;
     margin-top: 8px;
     padding: 8px 16px;
@@ -1333,15 +1334,17 @@ input:focus {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
 }
 .my_mods_title {
+    /* column so the changing count ("3 of 49") never resizes the row and
+       shoves the search input around */
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    flex-direction: column;
+    gap: 1px;
 }
 .my_mods_title h2 {
-    font-size: 20px;
+    font-size: 18px;
 }
 .my_mods_title .count {
     color: var(--faint);
@@ -1351,6 +1354,15 @@ input:focus {
     margin-left: auto;
     display: flex;
     gap: 8px;
+}
+/* search-match highlight: a soft gold wash, readable in both themes. No
+   padding — the box-shadow halo adds breathing room without changing the
+   text's width, so rows don't reflow as you type. */
+.installed_row mark {
+    background: light-dark(#f5e7c0, #4a3a10);
+    color: inherit;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px light-dark(#f5e7c0, #4a3a10);
 }
 
 .installed_list {

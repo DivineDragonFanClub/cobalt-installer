@@ -35,6 +35,8 @@ anyhow = "1"
 suppaftp = "6"
 # Just for enumerating removable drives (SD card / USB) in the volume picker. Only the disk feature.
 sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
+# Self-update the installer from its own GitHub releases (minisign-signed assets).
+release-hub = "0.3"
 
 # Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
 # `futures-timer` gives us an await-able delay for polling the folder grant.

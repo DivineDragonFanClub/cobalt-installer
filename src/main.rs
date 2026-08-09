@@ -48,6 +48,8 @@ mod mods_ui;
 mod nexus;
 #[cfg(feature = "desktop")]
 mod nexus_ui;
+#[cfg(feature = "desktop")]
+mod updater;
 
 // Everything about locating an emulator on the host filesystem is desktop only.
 // On Android we don't hunt for install folders, the user hands us Eden's folder
@@ -521,6 +523,16 @@ fn Body(status_message: Signal<String>) -> Element {
     // the right source, and opens that mod's detail overlay in-app.
     let mut view_request = use_signal(|| None::<install::ModSource>);
 
+    // Self-update: check our own GitHub releases once on launch. A failed check just leaves the
+    // banner hidden (we never nag), so this quietly does nothing until releases are signed.
+    let mut update_available = use_signal(|| None::<release_hub::Update>);
+    let mut update_status = use_signal(|| None::<String>);
+    use_future(move || async move {
+        if let Ok(Some(update)) = updater::check().await {
+            update_available.set(Some(update));
+        }
+    });
+
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
 
@@ -564,6 +576,36 @@ fn Body(status_message: Signal<String>) -> Element {
     });
 
     rsx! {
+        if let Some(update) = update_available() {
+            div { class: "nxm_banner update_banner",
+                span {
+                    if let Some(msg) = update_status() {
+                        "{msg}"
+                    } else {
+                        "Cobalt Installer {update.version} is available."
+                    }
+                }
+                if update_status().is_none() {
+                    button {
+                        class: "primary",
+                        onclick: {
+                            let up = update.clone();
+                            move |_| {
+                                update_status.set(Some("Downloading and installing…".to_string()));
+                                let up = up.clone();
+                                spawn(async move {
+                                    if let Err(e) = updater::install_and_relaunch(up, |_| {}).await {
+                                        update_status.set(Some(format!("Update failed: {e}")));
+                                    }
+                                });
+                            }
+                        },
+                        "Update & restart"
+                    }
+                    button { class: "close", onclick: move |_| update_available.set(None), "X" }
+                }
+            }
+        }
         if let Some(msg) = nxm_status() {
             div { class: "nxm_banner",
                 span { "{msg}" }

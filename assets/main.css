@@ -1140,6 +1140,14 @@ input:focus {
 .nxm_banner span {
     flex: 1;
 }
+/* Self-update banner: blue instead of the green nxm one, to read as "app news" not "install done". */
+.update_banner {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+}
+.update_banner .primary {
+    padding: 6px 14px;
+}
 
 /* ---- My Mods view --------------------------------------------------------- */
 #my_mods {

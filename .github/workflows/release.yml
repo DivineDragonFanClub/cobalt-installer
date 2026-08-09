@@ -45,28 +45,57 @@ jobs:
           Write-Host "Building version $ver"
           Select-String -Path Cargo.toml -Pattern '^version' | Select-Object -First 1
 
-      - name: Build portable app
-        run: dx build --release --platform desktop
+      # release-hub's Windows updater runs the downloaded asset as an .exe with elevation (ShellExecute
+      # runas), so the self-update asset is an NSIS installer (.exe), not an MSI (which would need
+      # msiexec). dx builds the NSIS bundle via cargo-packager (it fetches NSIS on its own).
+      - name: Bundle NSIS installer
+        run: dx bundle --release --platform desktop --package-types nsis --out-dir out-bundle
 
-      - name: Zip portable app
+      - name: Name the installer for release-hub
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path target -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
-                 Where-Object { $_.FullName -match '\\dx\\' -and $_.FullName -match '\\release\\' -and $_.Name -ne 'dx.exe' } |
-                 Select-Object -First 1
-          if (-not $exe) { throw "portable exe not found under target/dx" }
-          $appdir = $exe.Directory.FullName
-          Write-Host "Packaging $appdir"
+          $exe = Get-ChildItem -Path out-bundle -Recurse -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "NSIS installer not found under out-bundle" }
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Compress-Archive -Path (Join-Path $appdir '*') -DestinationPath "out/CobaltInstaller-windows-portable.zip" -Force
+          Copy-Item $exe.FullName "out/CobaltInstaller-windows-x86_64.exe"
+
+      - name: Check for minisign secret
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.MINISIGN_SECRET_KEY }}" ]; then
+            echo "HAS_MINISIGN=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::MINISIGN_SECRET_KEY not set, the Windows installer won't be self-update signed"
+            echo "HAS_MINISIGN=false" >> "$GITHUB_ENV"
+          fi
+
+      # Detached minisign signature next to the installer. minisign isn't on the runner, so grab the
+      # official prebuilt. Passwordless key (minisign -G -W) keeps signing non-interactive.
+      - name: Sign updater asset (minisign)
+        if: env.HAS_MINISIGN == 'true'
+        shell: pwsh
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-windows.zip" -OutFile minisign.zip
+          Expand-Archive minisign.zip -DestinationPath minisign-bin -Force
+          $minisign = (Get-ChildItem -Path minisign-bin -Recurse -Filter minisign.exe | Select-Object -First 1).FullName
+          [IO.File]::WriteAllText("minisign.key", $env:MINISIGN_SECRET_KEY.TrimEnd() + "`n")
+          & $minisign -S -s minisign.key -m out/CobaltInstaller-windows-x86_64.exe
+          if ($LASTEXITCODE -ne 0) { throw "minisign signing failed" }
+          Remove-Item minisign.key
+          Get-ChildItem out
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
           prerelease: ${{ inputs.prerelease }}
-          files: out/*.zip
-          fail_on_unmatched_files: true
+          files: |
+            out/*.exe
+            out/*.minisig
+          # minisig is absent when MINISIGN_SECRET_KEY isn't set, so don't fail on a missing glob.
+          fail_on_unmatched_files: false
 
   macos:
     runs-on: macos-latest
@@ -140,6 +169,14 @@ jobs:
             echo "::warning::MACOS_CERT_P12 not set, the macOS app will be unsigned/unnotarized"
             echo "HAS_SIGNING=false" >> "$GITHUB_ENV"
           fi
+          # Minisign key for self-update. Without it we still ship the app, just without the .minisig
+          # sidecars, so release-hub finds no verifiable asset and the in-app updater stays dormant.
+          if [ -n "${{ secrets.MINISIGN_SECRET_KEY }}" ]; then
+            echo "HAS_MINISIGN=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::MINISIGN_SECRET_KEY not set, the macOS app won't be self-update signed"
+            echo "HAS_MINISIGN=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Sign, notarize and staple
         if: env.HAS_SIGNING == 'true'
@@ -175,18 +212,44 @@ jobs:
           xcrun stapler staple "$app"
           xcrun stapler validate "$app"
 
-      - name: Zip the app
+      # release-hub's macOS installer extracts a ZIP, so the self-update asset is a `.app.zip` whose
+      # name contains the target string (darwin-aarch64 / darwin-x86_64). The .app is universal, so we
+      # publish the same zip under both arches; the updater downloads whichever matches the host.
+      - name: Zip the app (updater assets)
         run: |
+          set -euo pipefail
           mkdir -p out
-          ( cd out-arm && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "../out/${APP_NAME%.app}-macos-universal.zip" )
+          base="${APP_NAME%.app}"
+          ( cd out-arm && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "../out/${base}-darwin-aarch64.app.zip" )
+          cp "out/${base}-darwin-aarch64.app.zip" "out/${base}-darwin-x86_64.app.zip"
+
+      # Detached minisign signature next to each asset (release-hub verifies it against MINISIGN_PUBKEY
+      # baked into the app). Uses a passwordless key (generated with `minisign -G -W`) so signing is
+      # non-interactive. Legacy signatures are accepted, so no -H is needed.
+      - name: Sign updater assets (minisign)
+        if: env.HAS_MINISIGN == 'true'
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          brew install minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          for f in out/*.app.zip; do
+            minisign -S -s minisign.key -m "$f"
+          done
+          rm -f minisign.key
+          ls -l out
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
           prerelease: ${{ inputs.prerelease }}
-          files: out/*.zip
-          fail_on_unmatched_files: true
+          files: |
+            out/*.app.zip
+            out/*.minisig
+          # minisigs are absent when MINISIGN_SECRET_KEY isn't set, so don't fail on a missing glob.
+          fail_on_unmatched_files: false
 
   android:
     runs-on: ubuntu-latest

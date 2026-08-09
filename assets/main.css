@@ -1,197 +1,1714 @@
-/* App-wide styling */
+/* ============================================================================
+   Cobalt Installer styles
+   Light + dark theme, blue accent (matches the Cobalt/FE Engage vibe).
+   Organized as a small design system: tokens up top, then base, layout,
+   components. Every themed color is a light-dark(light, dark) pair; the app
+   follows the OS scheme unless data-theme="light|dark" is set on <html>.
+   ============================================================================ */
 
-/* color variables */
+/* ---- Design tokens -------------------------------------------------------- */
 :root {
-    --primary: #0047ab;
-    --secondary: #2f88d6;
-    --tertiary: #3f6996;
+    color-scheme: light dark;
+
+    /* surfaces, from deepest background up to raised cards */
+    --bg: light-dark(#f3f5f8, #0c0e13);
+    --surface: light-dark(#ffffff, #14181f);
+    --surface-2: light-dark(#eef1f5, #1b212b);
+    --surface-3: light-dark(#e4e9ef, #232b37);
+
+    /* lines */
+    --border: light-dark(#d8dee8, #2a3240);
+    --border-strong: light-dark(#b9c3d2, #3a4557);
+
+    /* text */
+    --text: light-dark(#1a2230, #eaedf2);
+    --muted: light-dark(#5a6675, #9aa5b4);
+    --faint: light-dark(#7e889b, #6b7688);
+
+    /* accent (blue) + a couple of status colors */
+    --accent: light-dark(#2563eb, #3b82f6);
+    --accent-hover: light-dark(#1d4ed8, #5a97f8);
+    --accent-dim: light-dark(#dbeafe, #1e3a63);
+    --good: light-dark(#178a47, #34c46a);
+    --good-dim: light-dark(#d9f2e3, #123a24);
+    --warn: light-dark(#9a6b13, #e0a23c);
+    --danger: light-dark(#d13c34, #e0574f);
+    --danger-dim: light-dark(#fbe1df, #4a1f1d);
+
+    /* legacy names still referenced in a few older rules */
+    --primary: var(--accent);
+    --secondary: light-dark(#1f6fb5, #2f88d6);
+    --tertiary: light-dark(#b7c2d3, #34405a);
+
+    /* the CTA arrow (site's arrow_link.svg redrawn): gold on light, swapped
+       to brand red by the dark-theme rules below the token block */
+    --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23b39347' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
+
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 6px 20px light-dark(rgba(25, 35, 55, 0.10), rgba(0, 0, 0, 0.35));
+    --shadow-lg: 0 12px 40px light-dark(rgba(25, 35, 55, 0.18), rgba(0, 0, 0, 0.5));
+}
+
+/* Explicit theme override — the settings toggle sets data-theme on <html>;
+   without it (or with data-theme="auto"/removed) the app follows the OS. */
+[data-theme="light"] {
+    color-scheme: light;
+}
+[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* Dark theme swaps the CTA arrow to brand red. Two selectors so the footer
+   toggle's data-theme override wins in both directions. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23ff060e' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
+    }
+}
+[data-theme="dark"] {
+    --engage-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath fill='%23ff060e' d='M0 9V0l8.9 4.3Z'/%3E%3C/svg%3E");
+}
+
+/* ---- Base ----------------------------------------------------------------- */
+* {
+    box-sizing: border-box;
+}
+
+/* Paint the webview root dark so a rubber-band overscroll never flashes white behind the page. */
+html {
+    background-color: var(--bg);
+    overscroll-behavior: none;
 }
 
 body {
-    background-color: #0f1116;
-    color: #ffffff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-#hero {
     margin: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    /* stop the elastic bounce past the top/bottom of the page */
+    overscroll-behavior: none;
+}
+
+
+h1, h2, h3 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+/* App-chrome headings use Inter (shipped from main.rs). User content (mod
+   names, cards) stays on the system stack. */
+.app_header_text h1,
+.panel_title,
+.onboard_card h2,
+.my_mods_title h2 {
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+}
+
+code {
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    color: var(--muted);
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}
+
+/* Inline SVG icons: block so they don't pick up a baseline gap, and they inherit text color. */
+.icon {
+    display: block;
+    flex-shrink: 0;
+}
+
+/* Slim, dark scrollbars so scroll areas don't clash with the theme. Kept simple: the
+   background-clip/transparent-border inset trick renders an invisible thumb in macOS WKWebView. */
+::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: light-dark(#9aa7ba, #4a566c);
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* ---- Layout --------------------------------------------------------------- */
+#hero {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
 }
 
-#header {
-    max-width: 1200px;
-}
-
-#installation_type_container {
+#app_header {
+    width: 100%;
     display: flex;
-    flex-direction: column;
-}
-
-#welcome {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
     align-items: center;
-    margin-bottom: 10px;
+    gap: 16px;
+    padding: 22px 28px 18px;
 }
 
 #sammie {
-    width: 100px;
-    height: 100px;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+#sammie:hover {
+    transform: rotate(-6deg) scale(1.06);
+}
+
+.app_header_text {
+    display: flex;
+    flex-direction: column;
+}
+.app_header_text h1 {
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--text);
+}
+.app_tagline {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* Operational plaque, same as the ghost/danger_outline buttons at the end of
+   the file (it's an <a>, so the styles are restated here). */
+.header_help {
+    margin-left: auto;
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: light-dark(#2b2517, #e8e0cc);
+    background: light-dark(#fdfdfb, #14181f);
+    padding: 7px 14px;
+    border: 1px solid light-dark(#a08a52, #8a744a);
+    border-radius: 3px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.header_help:hover {
+    background: light-dark(#f8f4e9, #1b212b);
+    border-color: #b39347;
+    color: light-dark(#2b2517, #f2ecd9);
+    text-decoration: none;
 }
 
 #main-container {
-    width: 80%;
-}
-
-#installation_type_container {
-    select {
-        padding: 10px;
-        font-size: 16px;
-        border-radius: 5px;
-        border: none;
-        margin-top: 10px;
-        width: fit-content
-    }
-}
-
-#action_zone {
+    width: 100%;
+    flex: 1;
+    /* the desktop layout has no header row above — breathe at the top */
+    padding: 22px 28px 24px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-top: 10px;
-    .action_zone_buttons {
-        display: flex;
-        flex-direction: row;
-        gap: 5px;
-    }
-    .status {
-        margin-top: 5px;
-    }
-    margin-bottom: 20px;
-}
-
-button {
-    padding: 10px 20px;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-    text-decoration: none;
-}
-
-button.primary {
-    background-color: var(--primary);
-    &:disabled {
-        background-color: #666;
-        cursor: not-allowed;
-    }
-    &:hover:enabled {
-        background-color: #0056b3;
-    }
-}
-
-button.secondary {
-    background-color: var(--secondary);
-    &:disabled {
-        background-color: #474747;
-        cursor: not-allowed;
-    }
-    &:hover:enabled {
-        background-color: #4f7ea8;
-    }
-}
-
-button.close {
-    background-color: #474747;
-    &:disabled {
-        background-color: #333;
-        cursor: not-allowed;
-    }
-    width: 15px;
-    height: 15px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-#sd_select_label {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: var(--primary);
-    color: white;
-    text-align: center;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-    text-decoration: none;
-    background-color: var(--primary);
-
-    &:hover {
-        background-color: #0056b3;
-    }
-
-    &:disabled {
-        background-color: #666;
-        cursor: not-allowed;
-    }
-}
-
-.message_zone {
-    margin-top: 10px;
-    padding: 20px;
-    border: 2px solid var(--primary);
-}
-
-.message_zone.first {
-    border-color: var(--tertiary);
-}
-
-.message_zone.second {
-    border-color: var(--secondary);
-}
-
-.message_zone.third {
-    border-color: var(--primary);
-}
-
-.message_zone.disabled {
-    border-color: #666;
 }
 
 #credits {
-    background-color: #1f1f1f;
-    color: white;
+    margin-top: auto;
+    padding-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--faint);
+    font-size: 12px;
+}
+#credits a {
+    color: var(--muted);
+}
+#credits .sep {
+    opacity: 0.5;
+}
+/* the Discord invite in the footer, replacing the old Get help link */
+.footer_discord {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+}
+/* the mark goes Discord blurple on hover, muted at rest like the label */
+.footer_discord:hover .icon {
+    color: light-dark(#5865f2, #7d88f5);
+}
+.footer_discord:hover {
+    color: light-dark(#5865f2, #8891f5);
+    text-decoration: none;
+}
+
+/* Theme switcher next to "Get help", cycling auto → light → dark. Same
+   corner curvature as the operational plaque buttons. */
+#credits .theme_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 11px;
+}
+#credits .theme_toggle:hover:enabled {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+}
+/* time-of-day icons from the game (urls injected in main.rs), with a thin
+   dark contour baked into the PNGs so the pale art reads on any background. */
+.tt_icon {
+    width: 15px;
+    height: 15px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+button {
+    /* every button speaks the hero's type: Inter at 15/600. Hero
+       differentiation is the arrow + gradient plate only. */
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+button:hover:enabled {
+    border-color: var(--border-strong);
+    background: var(--surface-3);
+}
+button:active:enabled {
+    transform: translateY(1px);
+}
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+button.primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+}
+button.primary:hover:enabled {
+    background: var(--accent-hover);
+    border-color: transparent;
+}
+button.primary:disabled {
+    background: light-dark(#c9d2de, #38404e);
+    color: light-dark(#8794a6, #aab3c0);
+}
+
+button.secondary {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+button.ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+    padding: 7px 13px;
+}
+button.ghost:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+
+button.danger {
+    background: var(--danger);
+    border-color: transparent;
+    color: #fff;
+}
+button.danger:hover:enabled {
+    background: light-dark(#b52f28, #ec6a62);
+    border-color: transparent;
+}
+
+button.danger_outline {
+    background: transparent;
+    border-color: light-dark(#f0b6b1, #4a1f1d);
+    color: light-dark(#c03830, #e88b85);
+    padding: 7px 13px;
+}
+button.danger_outline:hover:enabled {
+    background: var(--danger-dim);
+    color: light-dark(#7f221c, #ffd7d3);
+    border-color: var(--danger);
+}
+
+button.close {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+    border-radius: var(--radius-sm);
+}
+button.close:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+
+/* The install CTA, gradient-border edition: a flat modern face wrapped in a
+   2px band showing the brand red→blue gradient. The band is a translucent
+   gradient (border-box layer) over an underlay background-color — hovering
+   animates only that color, which reads as the border lighting up, plus a
+   soft glow shadow. Gradients themselves can't be transitioned, and filters
+   are banned here (WKWebView fringes animated filters dark). No motion on
+   hover; press keeps the base 1px nudge. */
+button.engage {
+    /* anchor for the ::before unit sprite standing on the left edge */
+    position: relative;
+    color: light-dark(#1c2433, #fff);
+    border: 2px solid transparent;
+    border-radius: 3px;
+    /* label sits optically centered between the sprite band (ends ~68px)
+       and the arrow's right band */
+    padding: 12px 56px 12px 76px;
+    background:
+        var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+    box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0), rgba(130, 150, 255, 0));
+    transition: background-color 0.35s, box-shadow 0.35s;
+}
+/* The unit sprite standing on the button, like the site's クラン button: feet
+   near the bottom, head poking past the top edge. Image url is injected from
+   main.rs (hashed asset). Decorative — clicks pass through. */
+button.engage::before {
+    content: "";
+    position: absolute;
+    /* set per install view via inline style, so it can change per mount
+       (the injected document::Style can't hot-swap) */
+    background-image: var(--hero-sprite-light);
+    left: 6px;
+    bottom: 3px;
+    /* the cropped sprites are ~31×27 — a 2× integer scale keeps the pixels
+       even; the box overflows the button top like the site's クラン character */
+    width: 62px;
+    height: 54px;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: contain;
+    image-rendering: pixelated;
+    pointer-events: none;
+}
+/* dark theme fields the Fell (ShadowLord) form — same two-selector pattern
+   as the arrow so the footer toggle wins in both directions */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) button.engage::before {
+        background-image: var(--hero-sprite-dark);
+    }
+}
+[data-theme="dark"] button.engage::before {
+    background-image: var(--hero-sprite-dark);
+}
+
+/* hover re-declares the layer stack because the base button hover's
+   background shorthand would otherwise wipe it (and its border-color would
+   paint over the gradient band) */
+button.engage:hover:enabled {
+    border-color: transparent;
+    background:
+        var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
+}
+
+/* ---- Sidebar nav ---------------------------------------------------------- */
+.app_shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+}
+.sidebar {
+    width: 228px;
+    flex-shrink: 0;
+    /* pin exactly at the resting offset (#main-container's 22px top padding)
+       so scrolling never shifts the panel before it sticks */
+    position: sticky;
+    top: 22px;
     display: flex;
     flex-direction: column;
-    bottom: 0;
-    p {
-        padding-left: 10px;
-        color: grey;
-    }
-    a {
-        color: white;
-        text-decoration: none;
-        &:hover {
-            text-decoration: underline;
-        }
-    }
+    gap: 4px;
+    padding: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+/* Brand bar at the top of the sidebar: Sammie + name. Not a nav item — only
+   the Sammie click does anything (the easter egg). */
+.sidebar_brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 9px 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+.sidebar_brand #sammie {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+}
+.sidebar_brand_text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.sidebar_title {
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+}
+.sidebar_tagline {
+    font-size: 10px;
+    color: var(--faint);
+    line-height: 1.3;
+    white-space: nowrap;
+}
+.nav_item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 11px 13px;
+    border-radius: 9px;
+    font-size: 14px;
+}
+.nav_item:hover:enabled {
+    color: var(--text);
+    background: var(--surface-2);
+}
+/* Selected state, after the Engage site's nav "on" glow: a pale red→blue
+   wash. Text keeps its normal color — the wash alone marks selection. */
+.nav_item.active {
+    background: linear-gradient(120deg,
+        light-dark(#fbe4e3, rgba(255, 70, 64, 0.16)),
+        light-dark(#e4e9f8, rgba(70, 110, 246, 0.24)));
+    /* full text color when selected, the lighter grey otherwise */
+    color: var(--text);
+    font-weight: 700;
+}
+/* Keep the active item looking active on hover instead of falling back to the grey hover. */
+.nav_item.active:hover:enabled {
+    background: linear-gradient(120deg,
+        light-dark(#f9d9d7, rgba(255, 70, 64, 0.24)),
+        light-dark(#dae1f6, rgba(70, 110, 246, 0.34)));
+}
+.nav_item:disabled {
+    color: var(--faint);
+    background: transparent;
+    cursor: not-allowed;
+}
+.nav_icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+/* Game-texture icons: full-color facility art shown as-is (their dark outline
+   reads on both themes). background-image urls are injected from main.rs. */
+.nav_icon.game {
+    width: 20px;
+    height: 20px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+}
+.nav_item:disabled .nav_icon.game {
+    opacity: 0.45;
+    filter: grayscale(0.7);
+}
+.nav_label {
+    flex: 1;
+}
+.nav_lock {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.6;
+}
+
+/* min-width:0 lets the mod grid shrink inside the flex row instead of overflowing. */
+.tab_content {
+    flex: 1;
+    min-width: 0;
+    animation: fadein 0.18s ease;
+}
+@keyframes fadein {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---- Onboarding (first run) ----------------------------------------------- */
+#onboarding {
+    display: flex;
+    justify-content: center;
+    padding: 24px 0 40px;
+}
+.onboard_card {
+    width: 100%;
+    max-width: 560px;
+}
+.onboard_card h2 {
+    font-size: 18px;
+}
+.onboard_sub {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 6px 0 18px;
+}
+.onboard_result {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+.onboard_status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 14px;
+}
+.onboard_status.ok {
+    color: var(--good);
+    font-weight: 600;
+}
+
+/* ---- Panels + form fields (Install, onboarding) --------------------------- */
+.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+}
+.panel_head {
+    margin-bottom: 20px;
+}
+.panel_title {
+    font-size: 17px;
+}
+.panel_hint {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 52ch;
+}
+
+.field {
+    margin-bottom: 20px;
+}
+.field:last-child {
+    margin-bottom: 0;
+}
+.field_label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 7px;
+}
+.field_hint {
+    margin: 9px 0 0;
+    color: var(--faint);
+    font-size: 13px;
+}
+.field_hint.warn {
+    color: var(--warn);
+}
+
+.file_pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.volume_select {
+    width: auto;
+    max-width: 220px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+/* FTP console target: host + port + test button on one row. */
+.ftp_fields {
+    margin-top: 10px;
+}
+.ftp_row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.ftp_row .field_input {
+    max-width: 260px;
+}
+.ftp_row .field_input.port {
+    width: 80px;
+}
+.pick_btn {
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-block;
+    padding: 8px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    cursor: pointer;
+}
+.pick_btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.pick_path {
+    font-size: 12px;
+    color: var(--muted);
+}
+.pick_path.muted {
+    color: var(--faint);
+}
+
+.actions_row {
+    display: flex;
+    gap: 10px;
+    /* side-by-side buttons match the CTA's height instead of centering short */
+    align-items: stretch;
+}
+.status_line {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* Form controls (selects + text inputs) share one look. */
+.field_input,
+.category_select,
+.nexus_key_row input,
+.mod_search_bar input[type="text"],
+#installation_type_container select {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+}
+.field_input {
+    width: 100%;
+    max-width: 320px;
+}
+select:focus,
+input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ---- Boxed message zones (the Android installer still uses these) ---------- */
+.message_zone {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 12px;
+}
+.message_zone.disabled {
+    opacity: 0.7;
+}
+#installation_type_container {
+    display: flex;
+    flex-direction: column;
+}
+#installation_type_container label {
+    color: var(--muted);
+    font-size: 14px;
+}
+#installation_type_container select {
+    margin-top: 10px;
+    width: fit-content;
+}
+#action_zone {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.action_zone_buttons {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+}
+.status {
+    background: transparent;
+    padding: 0;
+    color: var(--muted);
+    font-size: 13px;
 }
 
 .note {
-    color: grey;
+    color: var(--faint);
     font-size: 12px;
 }
 
-#sd_select_button_container {
+/* ---- Source toggle (GameBanana / NexusMods) ------------------------------- */
+.source_toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    margin-bottom: 18px;
+}
+.source_toggle .src {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 7px 18px;
+    border-radius: 999px;
+}
+.source_toggle .src:hover:enabled {
+    color: var(--text);
+}
+.source_toggle .src.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* ---- Search + filters ----------------------------------------------------- */
+.mod_search_bar {
     display: flex;
-    flex-direction: row;
-    gap: 10px;
     align-items: center;
-    margin-top: 10px;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.mod_search_bar input[type="text"] {
+    flex: 1;
+}
+/* input and select share one height so the bar reads as a single strip
+   (natural heights differ: input ~42, select ~36) */
+.mod_search_bar input[type="text"],
+.mod_search_bar .category_select {
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.category_select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.nsfw_toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* ---- Chips / badges ------------------------------------------------------- */
+.installed_badge,
+.chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    /* same corner curvature as the operational plaque buttons */
+    border-radius: 3px;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.installed_badge {
+    background: var(--good-dim);
+    color: light-dark(#136c39, #6fe39a);
+    border: 1px solid light-dark(#a4dcbc, #1f7a44);
+}
+.chip.gb {
+    background: light-dark(#f8edd3, #3a2a10);
+    color: light-dark(#8a5e10, #f4c56b);
+    border: 1px solid light-dark(#e6d09a, #6b4e1e);
+}
+.chip.nexus {
+    background: light-dark(#fae9dc, #2a1a10);
+    color: light-dark(#a14e1a, #f0a06a);
+    border: 1px solid light-dark(#edc6a4, #6b3e1e);
+}
+.chip.manual {
+    background: var(--surface-3);
+    color: var(--muted);
+    border: 1px solid var(--border-strong);
+}
+.chip.warn {
+    background: light-dark(#f8f0cf, #3a3410);
+    color: var(--warn);
+    border: 1px solid light-dark(#e4d38b, #6b5e1e);
+}
+.premium_badge {
+    background: light-dark(#f5e8c6, #4a3a10);
+    color: light-dark(#8a5e10, #f4c56b);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
+}
+
+/* ---- Mod grid + cards ----------------------------------------------------- */
+#mod_browser,
+#nexus_browser {
+    margin-top: 2px;
+}
+
+.mod_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.mod_card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mod_card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 14px light-dark(rgba(25, 35, 55, 0.12), rgba(0, 0, 0, 0.3));
+}
+
+.mod_card_media {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+}
+.mod_thumb {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+}
+.mod_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.mod_thumb.blurred img {
+    filter: blur(22px);
+    transform: scale(1.15);
+}
+
+/* Darkens the bottom of the image so the category chip stays readable.
+   Scrim, pills and the category chip sit on top of mod artwork, so they stay
+   dark-on-image in both themes — don't convert these to light-dark(). */
+.mod_card_scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0) 45%, rgba(10, 12, 17, 0.8) 100%);
+    pointer-events: none;
+}
+
+.mod_card_pills {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+}
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+}
+.pill.installed {
+    background: rgba(24, 90, 52, 0.72);
+    border-color: rgba(52, 196, 106, 0.6);
+    color: #bff2d3;
+}
+.pill.featured {
+    background: rgba(74, 58, 16, 0.72);
+    border-color: rgba(244, 197, 107, 0.55);
+    color: #f6d992;
+}
+.pill.adult {
+    background: rgba(90, 30, 30, 0.72);
+    border-color: rgba(224, 87, 79, 0.6);
+    color: #ffceca;
+}
+
+.mod_card_cat {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    color: #e2e8f2;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mod_card_body {
+    padding: 11px 13px 13px;
+}
+.mod_card_title {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mod_card_author {
+    font-size: 12px;
+    color: var(--faint);
+    margin-top: 1px;
+}
+.mod_card_stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 12px;
+}
+.mod_card_stats .stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.mod_card_stats .stat.ver {
+    margin-left: auto;
+    color: var(--faint);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+}
+
+.mod_pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 22px;
+    color: var(--muted);
+}
+.mod_pager button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Spinner (busy buttons) */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(150, 160, 175, 0.35);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Loading skeletons: a shimmer sweeping across placeholder shapes. */
+@keyframes shimmer {
+    from { background-position: -450px 0; }
+    to { background-position: 450px 0; }
+}
+.skeleton_box,
+.skeleton_line {
+    background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+    background-size: 900px 100%;
+    animation: shimmer 1.3s linear infinite;
+}
+.mod_card.skeleton {
+    cursor: default;
+}
+.mod_card.skeleton:hover {
+    border-color: var(--border);
+    box-shadow: none;
+}
+.skeleton_box {
+    aspect-ratio: 16 / 10;
+}
+.mod_card.skeleton .mod_card_body {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+.skeleton_line {
+    height: 11px;
+    border-radius: 4px;
+}
+.skeleton_line.w70 { width: 70%; }
+.skeleton_line.w55 { width: 55%; }
+.skeleton_line.w40 { width: 40%; }
+
+.mod_message {
+    color: var(--muted);
+    padding: 20px 0;
+}
+.mod_message.error {
+    color: light-dark(#bf3a31, #ec7c74);
+}
+
+/* ---- Empty state ---------------------------------------------------------- */
+.empty_state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+}
+.empty_icon {
+    color: var(--faint);
+    margin-bottom: 14px;
+    opacity: 0.9;
+}
+.empty_title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+}
+.empty_sub {
+    font-size: 13px;
+    color: var(--faint);
+    margin-top: 4px;
+}
+
+/* ---- Detail overlay ------------------------------------------------------- */
+.mod_detail_overlay {
+    position: fixed;
+    inset: 0;
+    background: light-dark(rgba(25, 32, 45, 0.45), rgba(0, 0, 0, 0.7));
+    backdrop-filter: blur(3px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 20px;
+    overflow-y: auto;
+    z-index: 100;
+}
+.mod_detail_panel {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 26px;
+    max-width: 740px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+}
+.mod_detail_panel .close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.mod_detail_head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin: 0 34px 16px 0;
+}
+.mod_detail_title {
+    font-size: 20px;
+    margin: 0 0 5px;
+}
+.mod_detail_subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 4px;
+}
+.mod_detail_meta {
+    color: var(--faint);
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.mod_screens {
+    display: flex;
+    gap: 10px;
+    /* `scroll`, not `auto`: our styled scrollbar takes 11px of real layout height, and with
+       `auto` it only appears once the images finish loading and overflow — dropping everything
+       below the strip by 11px a beat after the modal opens. Reserve the track from the start. */
+    overflow-x: scroll;
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+}
+.mod_screens img {
+    height: 160px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.mod_desc {
+    color: light-dark(#39434f, #cfd6e0);
+    font-size: 14px;
+    line-height: 1.6;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 18px;
+    /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
+    white-space: pre-wrap;
+}
+
+.mod_files {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.mod_page_link {
+    display: inline-block;
+    margin-top: 16px;
+    color: var(--accent);
+    font-size: 13px;
+}
+
+/* ---- Install rows + progress ---------------------------------------------- */
+.install_row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+}
+.install_row .file_info {
+    flex: 1;
+    font-size: 13px;
+    color: var(--muted);
+    word-break: break-all;
+}
+.install_row .file_name .pill.latest {
+    margin-left: 8px;
+    background: light-dark(rgba(219, 231, 255, 0.9), rgba(30, 58, 120, 0.72));
+    border-color: light-dark(rgba(59, 108, 214, 0.5), rgba(96, 141, 244, 0.55));
+    color: light-dark(#2b56b4, #b9ccf7);
+}
+.install_row .file_desc {
+    font-size: 12px;
+    color: var(--faint);
+    margin-top: 3px;
+}
+/* Superseded uploads live behind a native disclosure fold. */
+.older_files summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 2px 2px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.older_files summary:hover {
+    color: var(--text);
+}
+.older_files[open] summary {
+    margin-bottom: 8px;
+}
+.older_files .older_list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.install_row .progress {
+    flex: 1;
+    height: 8px;
+    background: var(--surface-3);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.install_row .progress .bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
+}
+.install_row .progress_label {
+    font-size: 12px;
+    color: var(--faint);
+    white-space: nowrap;
+    /* Fixed slot + tabular digits: the counter re-renders every progress tick,
+       and any width change would re-flex the bar next to it (visible jitter). */
+    min-width: 120px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.install_row .muted {
+    color: var(--muted);
+    font-size: 13px;
+}
+.install_row .ok {
+    color: var(--good);
+    font-weight: 600;
+}
+.install_row .errline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.install_row .err {
+    color: light-dark(#bf3a31, #ec7c74);
+    font-size: 13px;
+}
+
+/* ---- NexusMods specifics -------------------------------------------------- */
+.nexus_userbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 0 16px;
+    color: var(--muted);
+    font-size: 14px;
+}
+.nexus_userbar button {
+    margin-left: auto;
+    padding: 7px 14px;
+}
+.nexus_setup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.nexus_key_row {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+}
+.nexus_key_row input {
+    flex: 1;
+}
+.nexus_feed_toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+.nexus_feed_toggle .nsfw_toggle {
+    margin-left: auto;
+}
+.manual_install {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.manual_btn {
+    font-family: "Inter", 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-block;
+    margin-top: 8px;
+    padding: 8px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.manual_btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+.nxm_status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.nxm_paste {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 15px;
+}
+.nxm_paste summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 14px;
+}
+
+/* nxm:// download banner (from the website's Mod Manager button) */
+.nxm_banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 11px 15px;
+    background: var(--good-dim);
+    border: 1px solid light-dark(#a4dcbc, #1f7a44);
+    border-radius: var(--radius);
+    font-size: 14px;
+}
+.nxm_banner span {
+    flex: 1;
+}
+/* Self-update banner: blue instead of the green nxm one, to read as "app news" not "install done". */
+.update_banner {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+}
+.update_banner .primary {
+    padding: 6px 14px;
+}
+
+/* ---- My Mods view --------------------------------------------------------- */
+#my_mods {
+    margin-top: 2px;
+}
+.my_mods_head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.my_mods_title {
+    /* column so the changing count ("3 of 49") never resizes the row and
+       shoves the search input around */
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.my_mods_title h2 {
+    font-size: 18px;
+}
+.my_mods_title .count {
+    color: var(--faint);
+    font-size: 13px;
+}
+.my_mods_actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+/* search-match highlight: a soft gold wash, readable in both themes. No
+   padding — the box-shadow halo adds breathing room without changing the
+   text's width, so rows don't reflow as you type. */
+.installed_row mark {
+    background: light-dark(#f5e7c0, #4a3a10);
+    color: inherit;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px light-dark(#f5e7c0, #4a3a10);
+}
+
+.installed_list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.installed_row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 16px;
+}
+.installed_info {
+    flex: 1;
+    min-width: 0;
+}
+.installed_name_line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.installed_name {
+    font-weight: 600;
+    font-size: 15px;
+}
+.installed_meta {
+    color: var(--faint);
+    font-size: 12px;
+    margin-top: 3px;
+}
+.installed_desc {
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+    /* keep long descriptions to two lines so rows stay tidy */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.installed_row_actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    /* keep the buttons vertically centered against the first line of text */
+    align-items: center;
+    padding-top: 2px;
+}
+
+/* ---- Bond fragments easter egg modal -------------------------------------- */
+.bonds_overlay {
+    position: fixed;
+    inset: 0;
+    background: light-dark(rgba(25, 32, 45, 0.45), rgba(0, 0, 0, 0.7));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadein 0.18s ease;
+}
+.bonds_modal {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 26px 36px;
+    border: 2px solid transparent;
+    background:
+        linear-gradient(var(--surface), var(--surface)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+    box-shadow: var(--shadow-lg);
+}
+.bonds_modal img {
+    width: 40px;
+}
+.bonds_text {
+    margin: 0;
+    font-weight: 600;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+/* Below this the sidebar becomes a horizontal bar above the content. */
+@media (max-width: 720px) {
+    .app_shell {
+        flex-direction: column;
+    }
+    .sidebar {
+        position: static;
+        width: 100%;
+        flex-direction: row;
+    }
+    /* no room for the brand when the sidebar collapses to a bar */
+    .sidebar_brand {
+        display: none;
+    }
+    .nav_item {
+        flex: 1;
+        justify-content: center;
+    }
+    .nav_label {
+        flex: 0 1 auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .mod_search_bar {
+        flex-wrap: wrap;
+    }
+    .nav_item {
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+    .installed_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .installed_row_actions {
+        justify-content: flex-end;
+    }
+}
+
+/* ---- Engage button system --------------------------------------------------
+   Gradient-border edition: flat faces wrapped in a 2px gradient band. The
+   band is a translucent gradient (border-box layer) over an underlay
+   background-color; hover animates only that color plus a soft glow shadow —
+   lighting, never motion or filters (WKWebView fringes animated filters and
+   flashes animated scale). Hover rules re-declare the full layer stack
+   because the base button hover's background shorthand would wipe it. Tiers:
+   - engage    hero CTA: brand red→blue band, arrow (in the Buttons section)
+   - primary   standard CTA: brand band, arrow, standard padding
+   - secondary, .pick_btn, .manual_btn, .errline button   slate band
+   - danger    red face, deep red band
+   - ghost, danger_outline   operational plaques (below); close stays flat
+   nav_item, .source_toggle .src and .theme_toggle stay pills on purpose:
+   they're navigation/chrome, not actions. */
+button.primary,
+button.secondary,
+button.danger,
+.pick_btn,
+.manual_btn,
+.errline button {
+    color: var(--text);
+    border: 2px solid transparent;
+    border-radius: 3px;
+    background:
+        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(100deg,
+            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
+    background-color: light-dark(#8b9aae, #3c4a5e);
+    box-shadow: 0 0 12px rgba(80, 100, 130, 0);
+    transition: background-color 0.35s, box-shadow 0.35s;
+}
+button.secondary:hover:enabled,
+.pick_btn:hover,
+.manual_btn:hover,
+.errline button:hover:enabled {
+    border-color: transparent;
+    background:
+        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(100deg,
+            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 12px light-dark(rgba(90, 110, 140, 0.22), rgba(150, 170, 200, 0.18));
+}
+
+/* primary: the brand band + arrow, standard padding */
+button.primary {
+    color: light-dark(#1c2433, #fff);
+    padding-right: 34px;
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+}
+button.primary:hover:enabled {
+    border-color: transparent;
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 12px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
+}
+/* legacy mid-file primary:disabled sets its own colors; reassert the stack */
+button.primary:disabled {
+    color: light-dark(#1c2433, #fff);
+    background:
+        var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
+        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
+    background-color: #351523;
+}
+
+/* danger: filled red face, deep red band */
+button.danger {
+    color: #fff;
+    background:
+        linear-gradient(var(--danger), var(--danger)) padding-box,
+        linear-gradient(to right, rgba(150, 40, 34, 0.85), rgba(80, 20, 16, 0.85)) border-box;
+    background-color: #200a08;
+}
+button.danger:hover:enabled {
+    border-color: transparent;
+    background:
+        linear-gradient(var(--danger), var(--danger)) padding-box,
+        linear-gradient(to right, rgba(150, 40, 34, 0.85), rgba(80, 20, 16, 0.85)) border-box;
+    background-color: #fff;
+    box-shadow: 0 0 12px light-dark(rgba(180, 50, 42, 0.28), rgba(255, 120, 110, 0.22));
+}
+
+/* the close X stays flat, just squared */
+button.close {
+    border-radius: 0;
+}
+
+
+
+/* ---- Operational buttons ---------------------------------------------------
+   The site's simple bordered plaque (the 紹介ページへ button): flat cream face,
+   bronze hairline, gold ► before the label. Row-level actions: Open, View,
+   Cancel, Refresh (ghost) and Uninstall (danger_outline, red-flavored).
+   Deliberately planted — no plate, no scale. */
+button.ghost,
+button.danger_outline {
+    background: light-dark(#fdfdfb, #14181f);
+    border: 1px solid light-dark(#a08a52, #8a744a);
+    border-radius: 3px;
+    color: light-dark(#2b2517, #e8e0cc);
+    padding: 7px 14px;
+}
+button.ghost:hover:enabled {
+    background: light-dark(#f8f4e9, #1b212b);
+    border-color: #b39347;
+    color: light-dark(#2b2517, #f2ecd9);
+}
+button.danger_outline {
+    border-color: light-dark(#c5716a, #77413c);
+    color: light-dark(#a8332b, #e88b85);
+}
+button.danger_outline:hover:enabled {
+    background: light-dark(#fbf0ee, #241a19);
+    border-color: var(--danger);
+    color: light-dark(#8f2a23, #ffc9c4);
 }

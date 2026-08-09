@@ -227,7 +227,11 @@ fn InstalledRow(
                 }
             }
             div { class: "installed_row_actions",
-                if !matches!(entry.source, ModSource::Manual) {
+                // "View" opens the in-app browser detail. GameBanana always; Nexus only while its
+                // browser is enabled (otherwise the button would open nothing).
+                if matches!(entry.source, ModSource::GameBanana(_))
+                    || (matches!(entry.source, ModSource::Nexus(_)) && crate::mods_ui::NEXUS_ENABLED)
+                {
                     button {
                         class: "ghost",
                         onclick: {

@@ -20,29 +20,36 @@ enum Source {
     Nexus,
 }
 
+// NexusMods browsing/installing isn't finished, so it's hidden for now: the source toggle is gone
+// and everything is forced to GameBanana. Flip this to `true` to bring the toggle (and Nexus) back.
+pub(crate) const NEXUS_ENABLED: bool = false;
+
 #[component]
 pub fn ModBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
     let mut source = use_signal(|| Source::GameBanana);
 
     // A "view this mod" request from My Mods: flip to the matching source so the right child browser
-    // is mounted. That child then consumes the request and opens the mod's detail overlay.
+    // is mounted. That child then consumes the request and opens the mod's detail overlay. While
+    // Nexus is disabled we ignore Nexus view requests (there's no browser to open them in).
     use_effect(move || match view_request() {
         Some(install::ModSource::GameBanana(_)) => source.set(Source::GameBanana),
-        Some(install::ModSource::Nexus(_)) => source.set(Source::Nexus),
+        Some(install::ModSource::Nexus(_)) if NEXUS_ENABLED => source.set(Source::Nexus),
         _ => {}
     });
 
     rsx! {
-        div { class: "source_toggle",
-            button {
-                class: if source() == Source::GameBanana { "src active" } else { "src" },
-                onclick: move |_| source.set(Source::GameBanana),
-                "GameBanana"
-            }
-            button {
-                class: if source() == Source::Nexus { "src active" } else { "src" },
-                onclick: move |_| source.set(Source::Nexus),
-                "NexusMods"
+        if NEXUS_ENABLED {
+            div { class: "source_toggle",
+                button {
+                    class: if source() == Source::GameBanana { "src active" } else { "src" },
+                    onclick: move |_| source.set(Source::GameBanana),
+                    "GameBanana"
+                }
+                button {
+                    class: if source() == Source::Nexus { "src active" } else { "src" },
+                    onclick: move |_| source.set(Source::Nexus),
+                    "NexusMods"
+                }
             }
         }
         match source() {

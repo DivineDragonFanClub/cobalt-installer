@@ -244,6 +244,10 @@ fn main() {
     {
         use dioxus::desktop::tao::{dpi::LogicalSize, window::WindowBuilder};
 
+        // reqwest (ring) and release-hub's stack (aws-lc-rs) both bring a rustls crypto provider, so
+        // rustls can't auto-pick one and panics on first TLS use. Install a process default up front.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
         dioxus_sdk::storage::set_dir!();
         // Open at a 16:9 size, and keep a 16:9 floor so the layout never gets squished.
         let window = WindowBuilder::new()

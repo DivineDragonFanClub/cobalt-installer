@@ -40,6 +40,9 @@ suppaftp = "6"
 sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
 # Self-update the installer from its own GitHub releases (minisign-signed assets).
 release-hub = "0.3"
+# reqwest (ring) and release-hub's stack (aws-lc-rs) both enable a rustls crypto provider, so rustls
+# can't auto-pick one. We install a process-default provider in main() before any TLS use.
+rustls = "0.23"
 
 # Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
 # `futures-timer` gives us an await-able delay for polling the folder grant.

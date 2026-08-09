@@ -62,6 +62,8 @@ struct InstalledConfig {
     #[serde(default)]
     description: String,
     #[serde(default)]
+    source_url: String,
+    #[serde(default)]
     update_sources: Vec<UpdateSource>,
 }
 
@@ -121,11 +123,27 @@ pub fn installed_nexus_ids(sd_root: &Path) -> HashMap<u64, PathBuf> {
         let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else {
             continue;
         };
-        if let Some(id) = config.id.strip_prefix("nexus.").and_then(|n| n.parse::<u64>().ok()) {
+        let id = config
+            .id
+            .strip_prefix("nexus.")
+            .and_then(|n| n.parse::<u64>().ok())
+            .or_else(|| nexus_id_from_url(&config.source_url));
+        if let Some(id) = id {
             map.insert(id, dir.clone());
         }
     }
     map
+}
+
+// Pull the mod id out of a NexusMods page url ("https://www.nexusmods.com/fireemblemengage/
+// mods/123"). This is how a mod whose shipped config we annotated with source_url is recognized.
+fn nexus_id_from_url(url: &str) -> Option<u64> {
+    if !url.contains("nexusmods.com") {
+        return None;
+    }
+    let tail = url.split("/mods/").nth(1)?;
+    let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
 }
 
 pub fn uninstall_nexus_mod(sd_root: &Path, mod_id: u64) -> bool {
@@ -178,6 +196,8 @@ fn classify_source(config: &InstalledConfig) -> ModSource {
     if let Some(id) = config.id.strip_prefix("gamebanana.").and_then(|n| n.parse().ok()) {
         ModSource::GameBanana(id)
     } else if let Some(id) = config.id.strip_prefix("nexus.").and_then(|n| n.parse().ok()) {
+        ModSource::Nexus(id)
+    } else if let Some(id) = nexus_id_from_url(&config.source_url) {
         ModSource::Nexus(id)
     } else {
         ModSource::Manual
@@ -407,6 +427,74 @@ fn write_config(dest: &Path, config: &ModConfig) -> Result<(), InstallError> {
     std::fs::write(dest.join("config.yaml"), yaml).map_err(|e| InstallError::Config(e.to_string()))
 }
 
+// A mod that ships its own config.yaml usually doesn't record where it came from, which loses the
+// Installed badge, replace-on-reinstall, uninstall, and Cobalt's auto-update for that mod. If the
+// shipped config carries no gamebanana update_source, add ours. Best-effort by design: a config we
+// can't fully parse (including update_sources entries we don't recognize) is left byte-for-byte
+// alone — a malformed config.yaml panics the game at boot — and we only save YAML that re-parses.
+// The round-trip does drop YAML comments; that's the one cost of stamping.
+fn ensure_gamebanana_source(dest: &Path, item_id: u64) {
+    let path = dest.join("config.yaml");
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else { return };
+    // The modder already declared a GameBanana origin (even a different id): theirs wins.
+    if config.update_sources.iter().any(|s| matches!(s, UpdateSource::GameBanana { .. })) {
+        return;
+    }
+
+    let Ok(mut value) = serde_yaml::from_str::<serde_yaml::Value>(&text) else { return };
+    let Some(map) = value.as_mapping_mut() else { return };
+    let Ok(entry) = serde_yaml::to_value(UpdateSource::GameBanana { item_type: "Mod".into(), item_id })
+    else {
+        return;
+    };
+    let key = serde_yaml::Value::from("update_sources");
+    if !map.contains_key(&key) {
+        map.insert(key.clone(), serde_yaml::Value::Sequence(Vec::new()));
+    }
+    match map.get_mut(&key) {
+        Some(serde_yaml::Value::Sequence(seq)) => seq.push(entry),
+        // A bare `update_sources:` key parses as null; give it its first entry.
+        Some(v @ serde_yaml::Value::Null) => *v = serde_yaml::Value::Sequence(vec![entry]),
+        // Present but not a list: not a config we should be editing.
+        _ => return,
+    }
+
+    let Ok(yaml) = serde_yaml::to_string(&value) else { return };
+    if serde_yaml::from_str::<InstalledConfig>(&yaml).is_ok() {
+        let _ = std::fs::write(&path, yaml);
+    }
+}
+
+// Nexus counterpart of ensure_gamebanana_source. Cobalt has no nexus update-source variant (an
+// unknown tag would break its config parse), and rewriting the mod's id would break anything that
+// depends on it — so the only safe place for provenance is source_url, and only when the modder
+// left it empty. A config with its own source_url (a plugin's repo, say) stays untouched and the
+// mod stays classified Manual; honest, if imperfect.
+fn ensure_nexus_source(dest: &Path, meta: &NexusMeta) {
+    if meta.source_url.is_empty() {
+        return;
+    }
+    let path = dest.join("config.yaml");
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else { return };
+    if config.id.starts_with("nexus.") || !config.source_url.is_empty() {
+        return;
+    }
+
+    let Ok(mut value) = serde_yaml::from_str::<serde_yaml::Value>(&text) else { return };
+    let Some(map) = value.as_mapping_mut() else { return };
+    map.insert(
+        serde_yaml::Value::from("source_url"),
+        serde_yaml::Value::from(meta.source_url.clone()),
+    );
+
+    let Ok(yaml) = serde_yaml::to_string(&value) else { return };
+    if serde_yaml::from_str::<InstalledConfig>(&yaml).is_ok() {
+        let _ = std::fs::write(&path, yaml);
+    }
+}
+
 // Install a downloaded GameBanana mod. `bytes` is the raw .zip we already fetched. Extracts into
 // engage/mods/<name>/, replacing any earlier install of the same mod, then writes a config.yaml
 // (recording the GameBanana source for auto-updates) when the mod doesn't already carry one.
@@ -434,6 +522,8 @@ pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) 
             }],
         };
         write_config(&dest, &config)?;
+    } else {
+        ensure_gamebanana_source(&dest, detail.id);
     }
 
     Ok(())
@@ -460,6 +550,8 @@ pub fn install_nexus_mod(sd_root: &Path, meta: &NexusMeta, bytes: &[u8]) -> Resu
             update_sources: Vec::new(),
         };
         write_config(&dest, &config)?;
+    } else {
+        ensure_nexus_source(&dest, meta);
     }
 
     Ok(())
@@ -754,6 +846,112 @@ mod tests {
             strip_html_display("<div></div><p>only line</p><br><br>"),
             "only line"
         );
+    }
+
+    #[test]
+    fn stamp_gamebanana_source_into_shipped_config() {
+        let tmp = std::env::temp_dir().join(format!("cobalt_stamp_gb_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cfg = tmp.join("config.yaml");
+
+        // No update_sources at all: gains ours, keeps the modder's fields and id.
+        std::fs::write(&cfg, "id: my-cool-mod\nname: Cool Mod\nauthor: Someone\n").unwrap();
+        ensure_gamebanana_source(&tmp, 446023);
+        let read: InstalledConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(read.id, "my-cool-mod");
+        assert_eq!(read.author, "Someone");
+        assert!(matches!(
+            read.update_sources.first(),
+            Some(UpdateSource::GameBanana { item_id: 446023, .. })
+        ));
+        assert_eq!(classify_source(&read), ModSource::GameBanana(446023));
+
+        // Already has a gamebanana source (any id): file is left byte-for-byte alone, comments and all.
+        let theirs = "# hand-written\nid: another\nupdate_sources:\n- !gamebanana\n  item_type: Mod\n  item_id: 111\n";
+        std::fs::write(&cfg, theirs).unwrap();
+        ensure_gamebanana_source(&tmp, 446023);
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), theirs);
+
+        // A github entry is kept and ours is appended after it.
+        std::fs::write(
+            &cfg,
+            "id: plugin\nupdate_sources:\n- !github\n  user: doge\n  repo: cool-plugin\n",
+        )
+        .unwrap();
+        ensure_gamebanana_source(&tmp, 446023);
+        let read: InstalledConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(read.update_sources.len(), 2);
+        assert!(matches!(read.update_sources[0], UpdateSource::GitHub { .. }));
+        assert!(matches!(
+            read.update_sources[1],
+            UpdateSource::GameBanana { item_id: 446023, .. }
+        ));
+
+        // A bare `update_sources:` key (parses as null) gets its first entry.
+        std::fs::write(&cfg, "id: bare\nupdate_sources:\n").unwrap();
+        ensure_gamebanana_source(&tmp, 446023);
+        let read: InstalledConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(read.update_sources.len(), 1);
+
+        // Garbage we can't parse is never touched.
+        let garbage = "id: [unclosed\n  ???";
+        std::fs::write(&cfg, garbage).unwrap();
+        ensure_gamebanana_source(&tmp, 446023);
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), garbage);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn stamp_nexus_source_into_shipped_config() {
+        let tmp = std::env::temp_dir().join(format!("cobalt_stamp_nx_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cfg = tmp.join("config.yaml");
+        let meta = NexusMeta {
+            mod_id: 5150,
+            name: "Cool Nexus Mod".into(),
+            author: "Someone".into(),
+            description: String::new(),
+            source_url: "https://www.nexusmods.com/fireemblemengage/mods/5150".into(),
+        };
+
+        // Empty source_url: gains the page url, and the scanners recognize it from there.
+        std::fs::write(&cfg, "id: their-id\nname: Cool Nexus Mod\n").unwrap();
+        ensure_nexus_source(&tmp, &meta);
+        let read: InstalledConfig =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(read.id, "their-id");
+        assert_eq!(read.source_url, meta.source_url);
+        assert_eq!(classify_source(&read), ModSource::Nexus(5150));
+
+        // An existing source_url (a plugin's repo) is never overwritten.
+        let theirs = "id: plugin\nsource_url: https://github.com/doge/cool-plugin\n";
+        std::fs::write(&cfg, theirs).unwrap();
+        ensure_nexus_source(&tmp, &meta);
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), theirs);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn nexus_ids_from_urls() {
+        assert_eq!(
+            nexus_id_from_url("https://www.nexusmods.com/fireemblemengage/mods/5150"),
+            Some(5150)
+        );
+        // Trailing junk after the id is fine, other hosts and shapes are not.
+        assert_eq!(
+            nexus_id_from_url("https://www.nexusmods.com/fireemblemengage/mods/5150?tab=files"),
+            Some(5150)
+        );
+        assert_eq!(nexus_id_from_url("https://github.com/doge/mods/5150"), None);
+        assert_eq!(nexus_id_from_url("https://www.nexusmods.com/fireemblemengage"), None);
+        assert_eq!(nexus_id_from_url(""), None);
     }
 
     #[test]

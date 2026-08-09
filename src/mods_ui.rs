@@ -337,14 +337,33 @@ fn ModDetailPanel(
 #[component]
 fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
     let description = install::strip_html_display(&detail.description_html);
+    let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
+    // Newest upload first: modders keep superseded zips attached and GameBanana hands them back
+    // oldest-first, so an unsorted list leads people to install the original release.
+    let mut files = detail.files.clone();
+    files.sort_by_key(|f| std::cmp::Reverse(f.date_added));
+    let older: Vec<_> = files.iter().skip(1).cloned().collect();
+    let call_out_latest = files.len() > 1;
+    let mut meta = format!(
+        "by {} · {} likes · {} views · published {}",
+        detail.author(),
+        detail.likes,
+        detail.views,
+        gamebanana::format_date(detail.date_added),
+    );
+    // Only mention an update when it's a different day than the release; same-day edits are noise.
+    if detail.date_modified / 86_400 > detail.date_added / 86_400 {
+        meta.push_str(&format!(" · updated {}", gamebanana::format_date(detail.date_modified)));
+    }
     rsx! {
         div { class: "mod_detail_head",
             div {
                 h2 { class: "mod_detail_title", "{detail.name}" }
-                div { class: "mod_detail_meta",
-                    "by {detail.author()} · {detail.likes} likes · {detail.views} views"
+                if !subtitle.is_empty() {
+                    div { class: "mod_detail_subtitle", "{subtitle}" }
                 }
+                div { class: "mod_detail_meta", "{meta}" }
             }
             if is_installed {
                 button {
@@ -375,16 +394,33 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
         }
 
         div { class: "mod_files",
-            if detail.files.is_empty() {
+            if files.is_empty() {
                 div { class: "mod_message", "No downloadable files on this mod." }
             }
-            for f in detail.files.clone() {
+            for f in files.iter().take(1).cloned() {
                 InstallRow {
                     key: "{f.id}",
                     detail: detail.clone(),
                     file: f.clone(),
                     sd_root: sd_root.clone(),
                     installed,
+                    latest: call_out_latest,
+                }
+            }
+            if !older.is_empty() {
+                details { class: "older_files",
+                    summary { "Older versions ({older.len()})" }
+                    div { class: "older_list",
+                        for f in older.clone() {
+                            InstallRow {
+                                key: "{f.id}",
+                                detail: detail.clone(),
+                                file: f.clone(),
+                                sd_root: sd_root.clone(),
+                                installed,
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -404,7 +440,13 @@ enum Status {
 }
 
 #[component]
-fn InstallRow(detail: ModDetail, file: ModFile, sd_root: PathBuf, installed: Signal<HashSet<u64>>) -> Element {
+fn InstallRow(
+    detail: ModDetail,
+    file: ModFile,
+    sd_root: PathBuf,
+    installed: Signal<HashSet<u64>>,
+    #[props(default)] latest: bool,
+) -> Element {
     let mut status = use_signal(|| Status::Idle);
     // Show "Reinstall" if this mod is already installed, since installing replaces it.
     let label = if installed().contains(&detail.id) { "Reinstall" } else { "Install" };
@@ -412,7 +454,15 @@ fn InstallRow(detail: ModDetail, file: ModFile, sd_root: PathBuf, installed: Sig
     rsx! {
         div { class: "install_row",
             div { class: "file_info",
-                "{file.filename} ({gamebanana::format_filesize(file.filesize)})"
+                div { class: "file_name",
+                    "{file.filename} ({gamebanana::format_filesize(file.filesize)})"
+                    if latest {
+                        span { class: "pill latest", "Latest" }
+                    }
+                }
+                if !file.description.is_empty() {
+                    div { class: "file_desc", "{file.description}" }
+                }
             }
             match status() {
                 Status::Idle => rsx! {

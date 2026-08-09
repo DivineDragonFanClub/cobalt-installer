@@ -1185,6 +1185,11 @@ input:focus {
     font-size: 20px;
     margin: 0 0 5px;
 }
+.mod_detail_subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 4px;
+}
 .mod_detail_meta {
     color: var(--faint);
     font-size: 13px;
@@ -1194,7 +1199,10 @@ input:focus {
 .mod_screens {
     display: flex;
     gap: 10px;
-    overflow-x: auto;
+    /* `scroll`, not `auto`: our styled scrollbar takes 11px of real layout height, and with
+       `auto` it only appears once the images finish loading and overflow — dropping everything
+       below the strip by 11px a beat after the modal opens. Reserve the track from the start. */
+    overflow-x: scroll;
     padding-bottom: 8px;
     margin-bottom: 18px;
 }
@@ -1243,6 +1251,37 @@ input:focus {
     color: var(--muted);
     word-break: break-all;
 }
+.install_row .file_name .pill.latest {
+    margin-left: 8px;
+    background: light-dark(rgba(219, 231, 255, 0.9), rgba(30, 58, 120, 0.72));
+    border-color: light-dark(rgba(59, 108, 214, 0.5), rgba(96, 141, 244, 0.55));
+    color: light-dark(#2b56b4, #b9ccf7);
+}
+.install_row .file_desc {
+    font-size: 12px;
+    color: var(--faint);
+    margin-top: 3px;
+}
+/* Superseded uploads live behind a native disclosure fold. */
+.older_files summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 2px 2px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.older_files summary:hover {
+    color: var(--text);
+}
+.older_files[open] summary {
+    margin-bottom: 8px;
+}
+.older_files .older_list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 .install_row .progress {
     flex: 1;
     height: 8px;
@@ -1259,6 +1298,11 @@ input:focus {
     font-size: 12px;
     color: var(--faint);
     white-space: nowrap;
+    /* Fixed slot + tabular digits: the counter re-renders every progress tick,
+       and any width change would re-flex the bar next to it (visible jitter). */
+    min-width: 120px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 .install_row .muted {
     color: var(--muted);

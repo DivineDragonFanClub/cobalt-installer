@@ -134,6 +134,10 @@ pub struct ModFile {
     pub download_url: String,
     #[serde(rename = "_sDescription", default)]
     pub description: String,
+    // Unix time the file was uploaded. Modders keep superseded zips attached, so this is what
+    // decides which file is "the latest" in the detail view.
+    #[serde(rename = "_tsDateAdded", default)]
+    pub date_added: u64,
 }
 
 // The full mod page: everything the detail view needs in one request.
@@ -145,6 +149,10 @@ pub struct ModDetail {
     pub name: String,
     #[serde(rename = "_sProfileUrl", default)]
     pub profile_url: String,
+    // The short tagline shown under the title on the site. Only ProfilePage returns it; the
+    // browse/search list endpoints never include it, so cards can't have it.
+    #[serde(rename = "_sDescription", default)]
+    pub subtitle: Option<String>,
     // The long HTML description. We strip it to plain text before it ever hits a config file.
     #[serde(rename = "_sText", default)]
     pub description_html: String,
@@ -160,6 +168,10 @@ pub struct ModDetail {
     pub likes: u64,
     #[serde(rename = "_nViewCount", default)]
     pub views: u64,
+    #[serde(rename = "_tsDateAdded", default)]
+    pub date_added: u64,
+    #[serde(rename = "_tsDateModified", default)]
+    pub date_modified: u64,
 }
 
 impl ModDetail {
@@ -270,6 +282,29 @@ pub fn format_count(n: u64) -> String {
     let s = format!("{val:.1}");
     let s = s.strip_suffix(".0").map(String::from).unwrap_or(s);
     format!("{s}{suffix}")
+}
+
+// Format a GameBanana unix timestamp as "Jan 1, 2026" (UTC). Day-level metadata, so we skip
+// timezone handling and a chrono dependency.
+pub fn format_date(ts: u64) -> String {
+    const MONTHS: [&str; 12] =
+        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let (y, m, d) = civil_from_days((ts / 86_400) as i64);
+    format!("{} {}, {}", MONTHS[(m - 1) as usize], d, y)
+}
+
+// Days-since-epoch to (year, month, day), Howard Hinnant's civil-calendar algorithm.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = yoe as i64 + era * 400 + if m <= 2 { 1 } else { 0 };
+    (y, m, d)
 }
 
 pub fn format_filesize(bytes: u64) -> String {

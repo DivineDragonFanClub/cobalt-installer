@@ -53,6 +53,10 @@ jni = "0.21"
 ndk-context = "0.1"
 futures-timer = "3"
 anyhow = "1"
+# Parse the GitHub releases API response for the update check (serde_json is already pulled in by
+# reqwest's json feature, this just adds the derive so we can deserialize into a struct).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Only for the network-gated smoke test (install::tests::live_install_roundtrip), which needs an
 # async runtime to drive reqwest. Not part of the shipped app.

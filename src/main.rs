@@ -269,9 +269,68 @@ fn main() {
 
 const RELEASE_URL: &str = "https://github.com/Raytwo/Cobalt/releases/latest/download/release.zip";
 
+// This installer's own repo, for the self-update checks (desktop uses release-hub; Android hits the
+// releases API directly since release-hub is desktop-only). Only read from the Android check.
+#[allow(dead_code)]
+const INSTALLER_REPO: &str = "DivineDragonFanClub/cobalt-installer";
+
+// Compare two dotted version strings, returning true if `latest` is strictly newer than `current`.
+// Numeric per-component compare, missing components count as 0, and any `-prerelease` suffix is
+// ignored (only the numeric version is compared, pre-release tags aren't distinguished). Our release
+// tags are plain vX.Y.Z, so that's fine. Shared, platform-agnostic. Only called from the Android
+// check today (and the tests), so it looks unused in a plain desktop build.
+#[allow(dead_code)]
+fn version_gt(latest: &str, current: &str) -> bool {
+    fn parts(v: &str) -> Vec<u64> {
+        v.split('-')
+            .next()
+            .unwrap_or(v)
+            .split('.')
+            .map(|p| p.trim().parse::<u64>().unwrap_or(0))
+            .collect()
+    }
+    let (a, b) = (parts(latest), parts(current));
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        if x != y {
+            return x > y;
+        }
+    }
+    false
+}
+
+// Android has no release-hub, so we check GitHub's releases API for a newer APK ourselves. Returns
+// (tag, release page url) when the latest published release is newer than the running build. Android
+// itself enforces update integrity (an update APK must be signed with the same key), so there's no
+// signature check here, the user just gets sent to the release to download it.
+#[cfg(target_os = "android")]
+async fn check_android_update() -> Option<(String, String)> {
+    #[derive(serde::Deserialize)]
+    struct Release {
+        tag_name: String,
+        html_url: String,
+    }
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("CobaltInstaller/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .ok()?;
+    let release: Release = client
+        .get(format!("https://api.github.com/repos/{INSTALLER_REPO}/releases/latest"))
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let latest = release.tag_name.trim_start_matches('v');
+    version_gt(latest, env!("CARGO_PKG_VERSION")).then(|| (release.tag_name, release.html_url))
+}
+
 // On Android the target lives under Android/data, which is off limits to plain
 // file access. All the writing happens on the Kotlin side (see android/MainActivity.kt),
-// this module just calls those methods over JNI. The four method names and signatures
+// this module just calls those methods over JNI. The method names and signatures
 // here must match MainActivity.kt exactly.
 #[cfg(target_os = "android")]
 mod saf {
@@ -347,6 +406,21 @@ mod saf {
                 .call_method(activity, "deleteBadSubsdk9", "()Z", &[])?
                 .z()?;
             Ok(deleted)
+        })
+    }
+
+    // Open a URL in the system browser (an ACTION_VIEW intent on the Kotlin side). Used by the
+    // update banner to send the user to the GitHub release to download the new APK.
+    pub fn open_url(url: &str) -> anyhow::Result<()> {
+        with_activity(|env, activity| {
+            let jurl = env.new_string(url)?;
+            env.call_method(
+                activity,
+                "openUrl",
+                "(Ljava/lang/String;)V",
+                &[JValue::Object(&jurl)],
+            )?;
+            Ok(())
         })
     }
 }
@@ -1003,11 +1077,32 @@ fn Onboarding(
     }
 }
 
-// Android body: just the Eden installer, no mod browser yet.
+// Android body: the Eden installer, plus a "new version" banner. Android can't self-install (no
+// release-hub, and we don't publish on Play), so the banner just links out to the GitHub release.
 #[cfg(target_os = "android")]
 #[component]
 fn Body(status_message: Signal<String>) -> Element {
+    let mut update = use_signal(|| None::<(String, String)>);
+    use_future(move || async move {
+        if let Some(info) = check_android_update().await {
+            update.set(Some(info));
+        }
+    });
+
     rsx! {
+        if let Some((tag, url)) = update() {
+            div { class: "nxm_banner update_banner",
+                span { "Cobalt Installer {tag} is available." }
+                button {
+                    class: "primary",
+                    onclick: move |_| {
+                        let _ = saf::open_url(&url);
+                    },
+                    "Get it on GitHub"
+                }
+                button { class: "close", onclick: move |_| update.set(None), "X" }
+            }
+        }
         Controls { status_message }
     }
 }
@@ -1347,5 +1442,25 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::version_gt;
+
+    #[test]
+    fn newer_versions_win() {
+        assert!(version_gt("0.1.3", "0.1.2"));
+        assert!(version_gt("0.2.0", "0.1.9"));
+        assert!(version_gt("1.0.0", "0.9.9"));
+        // Equal or older is not "newer".
+        assert!(!version_gt("0.1.2", "0.1.2"));
+        assert!(!version_gt("0.1.1", "0.1.2"));
+        // Missing components count as 0.
+        assert!(version_gt("0.2", "0.1.9"));
+        // A pre-release suffix is ignored, so it compares by the numeric version only.
+        assert!(!version_gt("0.1.2", "0.1.2-rc1"));
+        assert!(version_gt("0.1.3", "0.1.2-rc1"));
     }
 }

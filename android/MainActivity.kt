@@ -132,6 +132,18 @@ class MainActivity : WryActivity() {
     // directly, so there's nothing to pre-clean. No-op on purpose.
     fun deleteBadSubsdk9(): Boolean = false
 
+    // Open a URL in the system browser (called from Rust via saf::open_url). The update banner uses
+    // this to send the user to the GitHub release page to download the new APK.
+    fun openUrl(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "openUrl failed: ${e.message}")
+        }
+    }
+
     // --- picker result ---
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

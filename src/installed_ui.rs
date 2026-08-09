@@ -24,16 +24,75 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
         let _ = crate::open_dir(mods_dir);
     };
 
+    // Case-insensitive filter over name + folder slug + author + description
+    // (author comes from the mod's config.yaml, which the scanner already
+    // parses), then the chosen sort. installed_at is filesystem metadata.
+    let mut query = use_signal(String::new);
+    let mut sort_by = use_signal(|| "name".to_string());
+    let filtered = use_memo(move || {
+        let q = query().trim().to_lowercase();
+        let mut list = mods();
+        if !q.is_empty() {
+            list.retain(|m| {
+                m.name.to_lowercase().contains(&q)
+                    || m.folder.to_lowercase().contains(&q)
+                    || m.author.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                    || m.description.as_deref().unwrap_or("").to_lowercase().contains(&q)
+            });
+        }
+        match sort_by().as_str() {
+            "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
+            "oldest" => list.sort_by_key(|m| m.installed_at),
+            "large" => list.sort_by_key(|m| std::cmp::Reverse(m.size_bytes)),
+            "small" => list.sort_by_key(|m| m.size_bytes),
+            // scan_installed_mods already returns name order; re-sort anyway
+            // so switching back from another sort restores it
+            _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        }
+        list
+    });
+
     rsx! {
         div { id: "my_mods",
             div { class: "my_mods_head",
                 div { class: "my_mods_title",
                     h2 { "Installed mods" }
-                    span { class: "count", "{mods().len()} installed" }
+                    span { class: "count",
+                        if query().trim().is_empty() {
+                            "{mods().len()} installed"
+                        } else {
+                            "{filtered().len()} of {mods().len()}"
+                        }
+                    }
                 }
                 div { class: "my_mods_actions",
                     button { class: "ghost", onclick: open_mods_folder, "Open folder" }
                     button { class: "ghost", onclick: refresh, "Refresh" }
+                }
+            }
+
+            // Same bar layout as the Browse view: search stretches, sort trails.
+            div { class: "mod_search_bar",
+                input {
+                    r#type: "text",
+                    placeholder: "Search name, author or description…",
+                    // mod names are codes and slugs — keep the OS text helpers out
+                    autocomplete: "off",
+                    autocapitalize: "off",
+                    spellcheck: "false",
+                    "autocorrect": "off",
+                    value: "{query}",
+                    oninput: move |e| query.set(e.value()),
+                }
+                select {
+                    class: "category_select",
+                    value: "{sort_by}",
+                    onchange: move |e| sort_by.set(e.value()),
+                    option { value: "name", "Name" }
+                    option { value: "recent", "Recently installed" }
+                    option { value: "oldest", "Oldest first" }
+                    option { value: "large", "Largest first" }
+                    option { value: "small", "Smallest first" }
                 }
             }
 
@@ -43,12 +102,60 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
                     div { class: "empty_title", "No mods installed yet" }
                     div { class: "empty_sub", "Head to Browse to find and install mods." }
                 }
+            } else if filtered().is_empty() {
+                div { class: "mod_message", "No installed mods match your search." }
             } else {
                 div { class: "installed_list",
-                    for m in mods() {
-                        InstalledRow { key: "{m.folder}", entry: m.clone(), sd_root: sd_root.clone(), mods, on_view }
+                    for m in filtered() {
+                        InstalledRow {
+                            key: "{m.folder}",
+                            entry: m.clone(),
+                            sd_root: sd_root.clone(),
+                            mods,
+                            on_view,
+                            query: query().trim().to_lowercase(),
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+// Wrap case-insensitive occurrences of `q` (already trimmed + lowercased) in
+// <mark>. Bails out to plain text when lowercasing changed byte offsets or a
+// hit lands off a char boundary, so odd scripts can never panic the slicing.
+fn highlight(text: &str, q: &str) -> Element {
+    let lower = text.to_lowercase();
+    if q.is_empty() || lower.len() != text.len() {
+        return rsx! { "{text}" };
+    }
+    let mut segs: Vec<(String, bool)> = Vec::new();
+    let mut pos = 0usize;
+    while let Some(off) = lower[pos..].find(q) {
+        let start = pos + off;
+        let end = start + q.len();
+        if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            return rsx! { "{text}" };
+        }
+        if start > pos {
+            segs.push((text[pos..start].to_string(), false));
+        }
+        segs.push((text[start..end].to_string(), true));
+        pos = end;
+    }
+    if segs.is_empty() {
+        return rsx! { "{text}" };
+    }
+    if pos < text.len() {
+        segs.push((text[pos..].to_string(), false));
+    }
+    rsx! {
+        for (seg, hit) in segs {
+            if hit {
+                mark { "{seg}" }
+            } else {
+                "{seg}"
             }
         }
     }
@@ -70,6 +177,7 @@ fn InstalledRow(
     sd_root: PathBuf,
     mods: Signal<Vec<InstalledMod>>,
     on_view: EventHandler<ModSource>,
+    query: String,
 ) -> Element {
     // Uninstall is destructive, so the button asks for a second click to confirm.
     let mut confirming = use_signal(|| false);
@@ -97,7 +205,7 @@ fn InstalledRow(
         div { class: "installed_row",
             div { class: "installed_info",
                 div { class: "installed_name_line",
-                    span { class: "installed_name", "{entry.name}" }
+                    span { class: "installed_name", {highlight(&entry.name, &query)} }
                     span { class: chip_class, "{chip_label}" }
                     if !entry.has_config {
                         span { class: "chip warn", "No config" }
@@ -105,15 +213,17 @@ fn InstalledRow(
                 }
                 div { class: "installed_meta",
                     if let Some(author) = entry.author.clone() {
-                        "by {author} · "
+                        "by "
+                        {highlight(&author, &query)}
+                        " · "
                     }
                     if entry.size_bytes > 0 {
                         "{crate::gamebanana::format_filesize(entry.size_bytes)} · "
                     }
-                    code { "{entry.folder}" }
+                    code { {highlight(&entry.folder, &query)} }
                 }
                 if let Some(desc) = entry.description.clone() {
-                    p { class: "installed_desc", "{desc}" }
+                    p { class: "installed_desc", {highlight(&desc, &query)} }
                 }
             }
             div { class: "installed_row_actions",

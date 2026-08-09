@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "dioxus",
  "dioxus-desktop",
+ "dioxus-inspector",
  "dioxus-sdk",
  "dirs 5.0.1",
  "futures-channel",
@@ -293,6 +294,8 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -305,9 +308,11 @@ dependencies = [
  "serde_path_to_error",
  "serde_urlencoded",
  "sync_wrapper",
+ "tokio",
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -326,6 +331,7 @@ dependencies = [
  "sync_wrapper",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1539,6 +1545,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "dioxus-inspector"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc9ec9ca2a1f733d3fd66240906b0f4e2e359155f666acb14c56a27753a14c5c"
+dependencies = [
+ "axum",
+ "core-foundation 0.10.1",
+ "core-graphics",
+ "image",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2801,6 +2823,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "pin-utils",

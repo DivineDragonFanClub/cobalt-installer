@@ -38,8 +38,9 @@ anyhow = "1"
 suppaftp = "6"
 # Just for enumerating removable drives (SD card / USB) in the volume picker. Only the disk feature.
 sysinfo = { version = "0.33", default-features = false, features = ["disk"] }
-# Self-update the installer from its own GitHub releases (minisign-signed assets).
-release-hub = "0.3"
+# Self-update the installer from its own GitHub releases (minisign-signed assets). Points at our fork
+# because crates.io release-hub 0.3.0 doesn't compile on Windows (a bad &HSTRING -> PCWSTR conversion).
+release-hub = { git = "https://github.com/DivineDragonFanClub/release-hub", rev = "de1e31d" }
 # reqwest (ring) and release-hub's stack (aws-lc-rs) both enable a rustls crypto provider, so rustls
 # can't auto-pick one. We install a process-default provider in main() before any TLS use.
 rustls = "0.23"

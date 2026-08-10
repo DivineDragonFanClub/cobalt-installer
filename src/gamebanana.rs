@@ -138,6 +138,10 @@ pub struct ModFile {
     // decides which file is "the latest" in the detail view.
     #[serde(rename = "_tsDateAdded", default)]
     pub date_added: u64,
+    // The modder-typed version tag ("5.4", sometimes "classes only") — free text, NOT semver.
+    // Files sharing a tag are one release's alternates and get grouped in the detail view.
+    #[serde(rename = "_sVersion", default)]
+    pub version: String,
 }
 
 // The full mod page: everything the detail view needs in one request.

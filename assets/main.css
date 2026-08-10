@@ -1154,7 +1154,9 @@ input:focus {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 40px 20px;
+    /* this padding is the modal's only size limit — the panel fills the rest,
+       so it always reads as a card floating just inside the app */
+    padding: 40px 44px;
     overflow-y: auto;
     z-index: 100;
 }
@@ -1164,7 +1166,6 @@ input:focus {
     border: 1px solid var(--border-strong);
     border-radius: 14px;
     padding: 26px;
-    max-width: 740px;
     width: 100%;
     box-shadow: var(--shadow-lg);
 }
@@ -1251,11 +1252,19 @@ input:focus {
     color: var(--muted);
     word-break: break-all;
 }
-.install_row .file_name .pill.latest {
+.install_row .file_name .pill {
     margin-left: 8px;
+}
+.install_row .file_name .pill.latest {
     background: light-dark(rgba(219, 231, 255, 0.9), rgba(30, 58, 120, 0.72));
     border-color: light-dark(rgba(59, 108, 214, 0.5), rgba(96, 141, 244, 0.55));
     color: light-dark(#2b56b4, #b9ccf7);
+}
+/* other-version rows: the tag is context, not a callout */
+.install_row .file_name .pill.ver {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+    color: var(--muted);
 }
 .install_row .file_desc {
     font-size: 12px;

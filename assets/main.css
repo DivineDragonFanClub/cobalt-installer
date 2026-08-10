@@ -1161,7 +1161,6 @@ input:focus {
     /* this padding is the modal's only size limit — the panel fills the rest,
        so it always reads as a card floating just inside the app */
     padding: 40px 44px;
-    overflow-y: auto;
     z-index: 100;
 }
 .mod_detail_panel {
@@ -1172,11 +1171,17 @@ input:focus {
     padding: 26px;
     width: 100%;
     box-shadow: var(--shadow-lg);
+    /* the card always fits the window; overflowing content scrolls inside the
+       card as one region (no nested scrollboxes, no page-scrolling the overlay) */
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
 }
 .mod_detail_panel .close {
-    position: absolute;
-    top: 14px;
-    right: 14px;
+    /* pinned to the card's top-right even while its content scrolls */
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 5;
 }
 
 .mod_detail_head {
@@ -1221,8 +1226,6 @@ input:focus {
     color: light-dark(#39434f, #cfd6e0);
     font-size: 14px;
     line-height: 1.6;
-    max-height: 200px;
-    overflow-y: auto;
     margin-bottom: 18px;
     /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
     white-space: pre-wrap;

@@ -79,6 +79,10 @@
 html {
     background-color: var(--bg);
     overscroll-behavior: none;
+    /* Always reserve the page scrollbar's 11px: short views (Install) and tall views (My
+       Mods) then share one content width, so switching tabs can't reflow-flash. The track
+       is transparent, so nothing shows when there's nothing to scroll. */
+    overflow-y: scroll;
 }
 
 body {
@@ -1154,8 +1158,9 @@ input:focus {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 40px 20px;
-    overflow-y: auto;
+    /* this padding is the modal's only size limit — the panel fills the rest,
+       so it always reads as a card floating just inside the app */
+    padding: 40px 44px;
     z-index: 100;
 }
 .mod_detail_panel {
@@ -1164,14 +1169,19 @@ input:focus {
     border: 1px solid var(--border-strong);
     border-radius: 14px;
     padding: 26px;
-    max-width: 740px;
     width: 100%;
     box-shadow: var(--shadow-lg);
+    /* the card always fits the window; overflowing content scrolls inside the
+       card as one region (no nested scrollboxes, no page-scrolling the overlay) */
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
 }
 .mod_detail_panel .close {
-    position: absolute;
-    top: 14px;
-    right: 14px;
+    /* pinned to the card's top-right even while its content scrolls */
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 5;
 }
 
 .mod_detail_head {
@@ -1216,12 +1226,30 @@ input:focus {
     color: light-dark(#39434f, #cfd6e0);
     font-size: 14px;
     line-height: 1.6;
-    max-height: 200px;
-    overflow-y: auto;
     margin-bottom: 18px;
     /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
     white-space: pre-wrap;
 }
+/* GameBanana descriptions render as sanitized HTML: real <br>s do the breaking,
+   and the site's colored-text spans map onto theme colors. Links use the global
+   anchor styles. (Nexus still renders plain text through bare .mod_desc.) */
+.mod_desc_html {
+    white-space: normal;
+}
+.mod_desc_html p {
+    margin: 0 0 10px;
+}
+.mod_desc_html ul,
+.mod_desc_html ol {
+    margin: 6px 0;
+    padding-left: 22px;
+}
+.mod_desc_html .GreenColor { color: var(--good); }
+.mod_desc_html .RedColor { color: var(--danger); }
+.mod_desc_html .BlueColor { color: var(--accent); }
+.mod_desc_html .OrangeColor,
+.mod_desc_html .YellowColor { color: var(--warn); }
+.mod_desc_html .PurpleColor { color: light-dark(#7a4fc9, #b592f0); }
 
 .mod_files {
     display: flex;
@@ -1251,11 +1279,19 @@ input:focus {
     color: var(--muted);
     word-break: break-all;
 }
-.install_row .file_name .pill.latest {
+.install_row .file_name .pill {
     margin-left: 8px;
+}
+.install_row .file_name .pill.latest {
     background: light-dark(rgba(219, 231, 255, 0.9), rgba(30, 58, 120, 0.72));
     border-color: light-dark(rgba(59, 108, 214, 0.5), rgba(96, 141, 244, 0.55));
     color: light-dark(#2b56b4, #b9ccf7);
+}
+/* other-version rows: the tag is context, not a callout */
+.install_row .file_name .pill.ver {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+    color: var(--muted);
 }
 .install_row .file_desc {
     font-size: 12px;

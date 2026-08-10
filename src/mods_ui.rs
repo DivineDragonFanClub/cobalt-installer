@@ -318,6 +318,24 @@ fn ModDetailPanel(
 ) -> Element {
     let detail = use_resource(move || async move { gamebanana::detail(mod_id).await });
 
+    // Escape closes the modal. The webview holds keyboard focus, so the listener lives in the
+    // page: registered while a modal is mounted, removed when it unmounts.
+    use_future(move || async move {
+        let mut esc = document::eval(
+            "window.__esc_close = (e) => { if (e.key === 'Escape') dioxus.send(true); };\n\
+             document.addEventListener('keydown', window.__esc_close);",
+        );
+        while esc.recv::<bool>().await.is_ok() {
+            on_close.call(());
+        }
+    });
+    use_drop(|| {
+        document::eval(
+            "document.removeEventListener('keydown', window.__esc_close);\n\
+             delete window.__esc_close;",
+        );
+    });
+
     rsx! {
         div { class: "mod_detail_overlay", onclick: move |_| on_close.call(()),
             div {
@@ -343,15 +361,46 @@ fn ModDetailPanel(
 
 #[component]
 fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
-    let description = install::strip_html_display(&detail.description_html);
+    let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
-    // Newest upload first: modders keep superseded zips attached and GameBanana hands them back
-    // oldest-first, so an unsorted list leads people to install the original release.
+    // Files grouped by their version tag: one release often ships several alternate zips (main +
+    // addon, classes-only vs full), and none of those are "older" than each other. Tags are
+    // modder-typed free text ("5.4", "classes only"), so they're matched, never parsed as semver.
+    // Untagged files stay individual — nothing says they belong together. The current release is
+    // the group matching the mod's own declared version (an auxiliary variant uploaded later must
+    // not displace it); when no group matches, newest upload wins.
     let mut files = detail.files.clone();
     files.sort_by_key(|f| std::cmp::Reverse(f.date_added));
-    let older: Vec<_> = files.iter().skip(1).cloned().collect();
-    let call_out_latest = files.len() > 1;
+    let mut groups: Vec<Vec<ModFile>> = Vec::new();
+    for f in files.iter().cloned() {
+        match groups.iter_mut().find(|g| !f.version.is_empty() && g[0].version == f.version) {
+            Some(g) => g.push(f),
+            None => groups.push(vec![f]),
+        }
+    }
+    let current_idx = groups
+        .iter()
+        .position(|g| !detail.version.is_empty() && g[0].version == detail.version)
+        .unwrap_or(0);
+    let current: Vec<ModFile> = groups.get(current_idx).cloned().unwrap_or_default();
+    let other: Vec<ModFile> = groups
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != current_idx)
+        .flat_map(|(_, g)| g.clone())
+        .collect();
+    // Badge rule: a version tag labels each file of the current release; a bare "Latest" only
+    // makes sense when a single file stands above other versions.
+    let current_badge = |f: &ModFile| -> Option<String> {
+        if !f.version.is_empty() {
+            Some(f.version.clone())
+        } else if current.len() == 1 && !other.is_empty() {
+            Some("Latest".into())
+        } else {
+            None
+        }
+    };
     let mut meta = format!(
         "by {} · {} likes · {} views · published {}",
         detail.author(),
@@ -390,41 +439,45 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
 
         if !detail.preview.images.is_empty() {
             div { class: "mod_screens",
-                for img in detail.preview.images.iter().take(6) {
-                    img { src: "{img.full_url()}" }
+                // Every screenshot the mod has, but as the 530px pre-renders: the strip shows
+                // them 160px tall, and a dozen full-size originals per open is real weight.
+                for img in detail.preview.images.iter() {
+                    img { src: "{img.thumb_url()}" }
                 }
             }
         }
 
-        if !description.is_empty() {
-            p { class: "mod_desc", "{description}" }
+        if !description.trim().is_empty() {
+            div { class: "mod_desc mod_desc_html", dangerous_inner_html: "{description}" }
         }
 
         div { class: "mod_files",
             if files.is_empty() {
                 div { class: "mod_message", "No downloadable files on this mod." }
             }
-            for f in files.iter().take(1).cloned() {
+            for f in current.clone() {
                 InstallRow {
                     key: "{f.id}",
                     detail: detail.clone(),
                     file: f.clone(),
                     sd_root: sd_root.clone(),
                     installed,
-                    latest: call_out_latest,
+                    badge: current_badge(&f),
                 }
             }
-            if !older.is_empty() {
+            if !other.is_empty() {
                 details { class: "older_files",
-                    summary { "Older versions ({older.len()})" }
+                    summary { "Other versions ({other.len()})" }
                     div { class: "older_list",
-                        for f in older.clone() {
+                        for f in other.clone() {
                             InstallRow {
                                 key: "{f.id}",
                                 detail: detail.clone(),
                                 file: f.clone(),
                                 sd_root: sd_root.clone(),
                                 installed,
+                                badge: (!f.version.is_empty()).then(|| f.version.clone()),
+                                muted_badge: true,
                             }
                         }
                     }
@@ -452,7 +505,10 @@ fn InstallRow(
     file: ModFile,
     sd_root: PathBuf,
     installed: Signal<HashSet<u64>>,
-    #[props(default)] latest: bool,
+    // Text for the pill next to the filename: the file's version tag, or "Latest".
+    #[props(default)] badge: Option<String>,
+    // Grey pill instead of blue — for other-version rows, where the tag is context, not a callout.
+    #[props(default)] muted_badge: bool,
 ) -> Element {
     let mut status = use_signal(|| Status::Idle);
     // Show "Reinstall" if this mod is already installed, since installing replaces it.
@@ -463,8 +519,8 @@ fn InstallRow(
             div { class: "file_info",
                 div { class: "file_name",
                     "{file.filename} ({gamebanana::format_filesize(file.filesize)})"
-                    if latest {
-                        span { class: "pill latest", "Latest" }
+                    if let Some(b) = badge.clone() {
+                        span { class: if muted_badge { "pill ver" } else { "pill latest" }, "{b}" }
                     }
                 }
                 if !file.description.is_empty() {

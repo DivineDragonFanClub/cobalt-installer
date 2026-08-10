@@ -42,9 +42,6 @@ impl Image {
         format!("{}/{}", self.base_url, file)
     }
 
-    pub fn full_url(&self) -> String {
-        format!("{}/{}", self.base_url, self.file)
-    }
 }
 
 #[derive(Deserialize, Clone, PartialEq, Debug, Default)]
@@ -332,4 +329,211 @@ fn urlencoding_encode(s: &str) -> String {
         }
     }
     out
+}
+
+// ---- Description sanitizing -------------------------------------------------
+//
+// Mod descriptions are third-party HTML. Rather than flattening them to plain text (which kills
+// the links modders rely on), the detail view renders a rebuilt subset: line breaks, links,
+// simple emphasis, lists, and GameBanana's `<span class="GreenColor">`-style colored text.
+// Nothing from the input passes through unexamined — unknown tags vanish (their text stays),
+// attributes are reconstructed from scratch, hrefs must be http(s), and `<script>`/`<style>`
+// lose their contents too. Text nodes keep their original entity encoding.
+
+// The GameBanana description colors we map to theme colors in CSS. Anything else loses its class.
+const GB_COLOR_CLASSES: [&str; 6] =
+    ["GreenColor", "RedColor", "BlueColor", "OrangeColor", "YellowColor", "PurpleColor"];
+
+// Tags that pass through as-is (no attributes) and participate in open/close tracking.
+const PLAIN_TAGS: [&str; 9] = ["b", "strong", "i", "em", "u", "s", "p", "ul", "ol"];
+
+pub fn sanitize_description(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut stack: Vec<String> = Vec::new();
+    let mut rest = html;
+
+    while let Some(lt) = rest.find('<') {
+        let (text, tail) = rest.split_at(lt);
+        out.push_str(text);
+        let Some(gt) = tail.find('>') else {
+            // Dangling "<" with no close: drop the remainder rather than emit half a tag.
+            rest = "";
+            break;
+        };
+        let token = &tail[1..gt];
+        rest = &tail[gt + 1..];
+
+        let closing = token.starts_with('/');
+        let token = token.trim_start_matches('/');
+        let name_end = token
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(token.len());
+        let name = token[..name_end].to_ascii_lowercase();
+        let attrs = &token[name_end..];
+
+        match name.as_str() {
+            "br" => out.push_str("<br>"),
+            "li" if closing => close_up_to(&mut stack, &mut out, "li"),
+            "li" => {
+                out.push_str("<li>");
+                stack.push("li".into());
+            }
+            // Their contents must never render as text.
+            "script" | "style" if !closing => {
+                let close = format!("</{name}");
+                match rest.to_ascii_lowercase().find(&close) {
+                    Some(pos) => {
+                        let after = &rest[pos..];
+                        rest = match after.find('>') {
+                            Some(g) => &after[g + 1..],
+                            None => "",
+                        };
+                    }
+                    None => rest = "",
+                }
+            }
+            "a" if closing => close_up_to(&mut stack, &mut out, "a"),
+            "a" => {
+                if let Some(href) = attr_value(attrs, "href") {
+                    let lower = href.to_ascii_lowercase();
+                    if lower.starts_with("https://") || lower.starts_with("http://") {
+                        let safe = href.replace('"', "&quot;").replace('<', "&lt;");
+                        out.push_str(&format!(
+                            "<a href=\"{safe}\" target=\"_blank\" rel=\"noopener noreferrer\">"
+                        ));
+                        stack.push("a".into());
+                    }
+                }
+                // No usable href: the tag vanishes, its text keeps flowing.
+            }
+            "span" if closing => close_up_to(&mut stack, &mut out, "span"),
+            "span" => {
+                let class = attr_value(attrs, "class")
+                    .filter(|c| GB_COLOR_CLASSES.contains(&c.trim()));
+                match class {
+                    Some(c) => out.push_str(&format!("<span class=\"{}\">", c.trim())),
+                    None => out.push_str("<span>"),
+                }
+                stack.push("span".into());
+            }
+            n if PLAIN_TAGS.contains(&n) => {
+                if closing {
+                    close_up_to(&mut stack, &mut out, n);
+                } else {
+                    out.push_str(&format!("<{n}>"));
+                    stack.push(n.to_string());
+                }
+            }
+            // Everything else (img, iframe, div, table, ...) is dropped; its inner text survives
+            // because only the tag token is consumed.
+            _ => {}
+        }
+    }
+    out.push_str(rest);
+
+    while let Some(name) = stack.pop() {
+        out.push_str(&format!("</{name}>"));
+    }
+    out
+}
+
+// Close `name` if it's open, emitting closes for anything opened inside it on the way (HTML in
+// the wild interleaves tags freely; the webview only gets balanced output).
+fn close_up_to(stack: &mut Vec<String>, out: &mut String, name: &str) {
+    if !stack.iter().any(|n| n == name) {
+        return;
+    }
+    while let Some(top) = stack.pop() {
+        out.push_str(&format!("</{top}>"));
+        if top == name {
+            break;
+        }
+    }
+}
+
+// Pull one attribute's value out of a tag's attribute blob, quoted or bare. Case-insensitive on
+// the name; the value keeps its source entity encoding.
+fn attr_value<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
+    let lower = attrs.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(found) = lower[from..].find(name) {
+        let at = from + found;
+        // Must be a standalone attribute name followed by '='.
+        let before_ok = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric();
+        let after = &attrs[at + name.len()..];
+        let after_eq = after.trim_start();
+        if before_ok && after_eq.starts_with('=') {
+            let value = after_eq[1..].trim_start();
+            return Some(match value.as_bytes().first() {
+                Some(&q @ (b'"' | b'\'')) => {
+                    let inner = &value[1..];
+                    &inner[..inner.find(q as char).unwrap_or(inner.len())]
+                }
+                _ => &value[..value
+                    .find(|c: char| c.is_ascii_whitespace())
+                    .unwrap_or(value.len())],
+            });
+        }
+        from = at + name.len();
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_keeps_links_breaks_and_colors() {
+        let input = "<span class=\"GreenColor\">This is a Cobalt mod, please \
+            <a href=\"https://github.com/Raytwo/Cobalt#cobalt\" target=\"_blank\">install it</a> \
+            to use this!</span><br><br>Thanks &amp; enjoy.";
+        let out = sanitize_description(input);
+        assert!(out.contains("<span class=\"GreenColor\">"));
+        assert!(out.contains(
+            "<a href=\"https://github.com/Raytwo/Cobalt#cobalt\" target=\"_blank\" rel=\"noopener noreferrer\">"
+        ));
+        assert!(out.contains("install it</a>"));
+        assert!(out.contains("<br><br>"));
+        // Entities pass through untouched.
+        assert!(out.contains("Thanks &amp; enjoy."));
+    }
+
+    #[test]
+    fn sanitize_defuses_hostile_input() {
+        let out = sanitize_description(
+            "<script>alert(1)</script>Hi \
+             <a href=\"javascript:boom()\" onclick=\"p()\">link</a> \
+             <img src=x onerror=steal()> <div style=\"position:fixed\">boxed</div>",
+        );
+        assert!(!out.contains("script"));
+        assert!(!out.contains("alert"));
+        assert!(!out.contains("onclick"));
+        assert!(!out.contains("onerror"));
+        assert!(!out.contains("javascript"));
+        assert!(!out.contains("<img"));
+        assert!(!out.contains("<div"));
+        // The readable text survives it all.
+        assert!(out.contains("Hi"));
+        assert!(out.contains("link"));
+        assert!(out.contains("boxed"));
+    }
+
+    #[test]
+    fn sanitize_balances_and_filters() {
+        // Unclosed tags get closed at the end.
+        assert_eq!(sanitize_description("<b>bold"), "<b>bold</b>");
+        // Unknown span classes drop to a bare span.
+        assert_eq!(
+            sanitize_description("<span class=\"SparklyColor\">x</span>"),
+            "<span>x</span>"
+        );
+        // A stray close with no open is ignored.
+        assert_eq!(sanitize_description("plain</a> text"), "plain text");
+        // Lists come through.
+        assert_eq!(
+            sanitize_description("<ul><li>one</li><li>two</li></ul>"),
+            "<ul><li>one</li><li>two</li></ul>"
+        );
+    }
 }

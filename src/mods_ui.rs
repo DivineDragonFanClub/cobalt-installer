@@ -318,6 +318,24 @@ fn ModDetailPanel(
 ) -> Element {
     let detail = use_resource(move || async move { gamebanana::detail(mod_id).await });
 
+    // Escape closes the modal. The webview holds keyboard focus, so the listener lives in the
+    // page: registered while a modal is mounted, removed when it unmounts.
+    use_future(move || async move {
+        let mut esc = document::eval(
+            "window.__esc_close = (e) => { if (e.key === 'Escape') dioxus.send(true); };\n\
+             document.addEventListener('keydown', window.__esc_close);",
+        );
+        while esc.recv::<bool>().await.is_ok() {
+            on_close.call(());
+        }
+    });
+    use_drop(|| {
+        document::eval(
+            "document.removeEventListener('keydown', window.__esc_close);\n\
+             delete window.__esc_close;",
+        );
+    });
+
     rsx! {
         div { class: "mod_detail_overlay", onclick: move |_| on_close.call(()),
             div {
@@ -343,7 +361,7 @@ fn ModDetailPanel(
 
 #[component]
 fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
-    let description = install::strip_html_display(&detail.description_html);
+    let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
     // Files grouped by their version tag: one release often ships several alternate zips (main +
@@ -429,8 +447,8 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
             }
         }
 
-        if !description.is_empty() {
-            p { class: "mod_desc", "{description}" }
+        if !description.trim().is_empty() {
+            div { class: "mod_desc mod_desc_html", dangerous_inner_html: "{description}" }
         }
 
         div { class: "mod_files",

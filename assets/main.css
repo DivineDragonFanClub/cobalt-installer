@@ -79,6 +79,10 @@
 html {
     background-color: var(--bg);
     overscroll-behavior: none;
+    /* Always reserve the page scrollbar's 11px: short views (Install) and tall views (My
+       Mods) then share one content width, so switching tabs can't reflow-flash. The track
+       is transparent, so nothing shows when there's nothing to scroll. */
+    overflow-y: scroll;
 }
 
 body {
@@ -1223,6 +1227,26 @@ input:focus {
     /* description keeps its paragraph/line breaks (strip_html_display emits \n), pre-wrap shows them */
     white-space: pre-wrap;
 }
+/* GameBanana descriptions render as sanitized HTML: real <br>s do the breaking,
+   and the site's colored-text spans map onto theme colors. Links use the global
+   anchor styles. (Nexus still renders plain text through bare .mod_desc.) */
+.mod_desc_html {
+    white-space: normal;
+}
+.mod_desc_html p {
+    margin: 0 0 10px;
+}
+.mod_desc_html ul,
+.mod_desc_html ol {
+    margin: 6px 0;
+    padding-left: 22px;
+}
+.mod_desc_html .GreenColor { color: var(--good); }
+.mod_desc_html .RedColor { color: var(--danger); }
+.mod_desc_html .BlueColor { color: var(--accent); }
+.mod_desc_html .OrangeColor,
+.mod_desc_html .YellowColor { color: var(--warn); }
+.mod_desc_html .PurpleColor { color: light-dark(#7a4fc9, #b592f0); }
 
 .mod_files {
     display: flex;

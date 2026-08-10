@@ -402,7 +402,7 @@ button.engage {
     padding: 12px 56px 12px 76px;
     background:
         var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
-        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(light-dark(#ffffff, #202734), light-dark(#ffffff, #202734)) padding-box,
         linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #351523;
     box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0), rgba(130, 150, 255, 0));
@@ -447,7 +447,7 @@ button.engage:hover:enabled {
     border-color: transparent;
     background:
         var(--engage-arrow) no-repeat right 16px center / 10px 10px padding-box,
-        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(light-dark(#ffffff, #202734), light-dark(#ffffff, #202734)) padding-box,
         linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #fff;
     box-shadow: 0 0 14px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
@@ -932,7 +932,7 @@ input:focus {
 
 .mod_card_media {
     position: relative;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 9;
     overflow: hidden;
 }
 .mod_thumb {
@@ -1418,7 +1418,9 @@ input:focus {
     border-color: var(--accent);
 }
 .update_banner .primary {
-    padding: 6px 14px;
+    /* Compact, but the right padding must still clear the tier arrow (drawn 12-21px
+       from the right edge) — this rule outweighs button.primary's padding-right. */
+    padding: 6px 34px 6px 14px;
 }
 
 /* ---- My Mods view --------------------------------------------------------- */
@@ -1610,9 +1612,9 @@ button.danger,
     border: 2px solid transparent;
     border-radius: 3px;
     background:
-        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(light-dark(#ffffff, #29323f), light-dark(#ffffff, #29323f)) padding-box,
         linear-gradient(100deg,
-            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(184, 194, 210, 0.9), rgba(106, 121, 148, 0.9)),
             light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
     background-color: light-dark(#8b9aae, #3c4a5e);
     box-shadow: 0 0 12px rgba(80, 100, 130, 0);
@@ -1624,9 +1626,9 @@ button.secondary:hover:enabled,
 .errline button:hover:enabled {
     border-color: transparent;
     background:
-        linear-gradient(light-dark(#ffffff, #171c24), light-dark(#ffffff, #171c24)) padding-box,
+        linear-gradient(light-dark(#ffffff, #29323f), light-dark(#ffffff, #29323f)) padding-box,
         linear-gradient(100deg,
-            light-dark(rgba(217, 223, 233, 0.9), rgba(130, 146, 174, 0.9)),
+            light-dark(rgba(184, 194, 210, 0.9), rgba(106, 121, 148, 0.9)),
             light-dark(rgba(123, 139, 163, 0.9), rgba(62, 74, 96, 0.9))) border-box;
     background-color: #fff;
     box-shadow: 0 0 12px light-dark(rgba(90, 110, 140, 0.22), rgba(150, 170, 200, 0.18));
@@ -1638,7 +1640,7 @@ button.primary {
     padding-right: 34px;
     background:
         var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
-        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(light-dark(#ffffff, #202734), light-dark(#ffffff, #202734)) padding-box,
         linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #351523;
 }
@@ -1646,7 +1648,7 @@ button.primary:hover:enabled {
     border-color: transparent;
     background:
         var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
-        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(light-dark(#ffffff, #202734), light-dark(#ffffff, #202734)) padding-box,
         linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #fff;
     box-shadow: 0 0 12px light-dark(rgba(11, 57, 154, 0.25), rgba(130, 150, 255, 0.28));
@@ -1656,7 +1658,7 @@ button.primary:disabled {
     color: light-dark(#1c2433, #fff);
     background:
         var(--engage-arrow) no-repeat right 12px center / 9px 9px padding-box,
-        linear-gradient(light-dark(#ffffff, #0c0e13), light-dark(#ffffff, #0c0e13)) padding-box,
+        linear-gradient(light-dark(#ffffff, #202734), light-dark(#ffffff, #202734)) padding-box,
         linear-gradient(to right, rgba(255, 6, 14, 0.85), rgba(11, 57, 154, 0.85)) border-box;
     background-color: #351523;
 }

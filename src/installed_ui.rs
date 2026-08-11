@@ -14,6 +14,21 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
     let scan_root = sd_root.clone();
     let mut mods = use_signal(move || install::scan_installed_mods(&scan_root));
 
+    // In-progress installs from the Body coroutine, shown as live rows above the list. A finished
+    // install drops out of this list, so re-scan the folder whenever the set of active ids changes
+    // (memoized so download progress ticks don't trigger a rescan) to surface the new mod.
+    let downloads = use_context::<crate::downloads::Downloads>();
+    let active_ids = use_memo(move || {
+        let mut ids: Vec<u64> = downloads().iter().map(|d| d.id).collect();
+        ids.sort();
+        ids
+    });
+    let rescan_root = sd_root.clone();
+    use_effect(move || {
+        let _ = active_ids();
+        mods.set(install::scan_installed_mods(&rescan_root));
+    });
+
     let refresh_root = sd_root.clone();
     let refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
 
@@ -29,6 +44,8 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
     // parses), then the chosen sort. installed_at is filesystem metadata.
     let mut query = use_signal(String::new);
     let mut sort_by = use_signal(|| "name".to_string());
+    // The starter-pack offer, shown as an overlay from the empty state.
+    let mut show_starter = use_signal(|| false);
     let filtered = use_memo(move || {
         let q = query().trim().to_lowercase();
         let mut list = mods();
@@ -96,13 +113,22 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
                 }
             }
 
-            if mods().is_empty() {
+            if !downloads().is_empty() {
+                div { class: "installed_list downloads",
+                    for d in downloads() {
+                        DownloadRow { key: "dl{d.id}", entry: d.clone() }
+                    }
+                }
+            }
+
+            if mods().is_empty() && downloads().is_empty() {
                 div { class: "empty_state",
                     div { class: "empty_icon", {crate::icons::package(40)} }
                     div { class: "empty_title", "No mods installed yet" }
-                    div { class: "empty_sub", "Head to Browse to find and install mods." }
+                    div { class: "empty_sub", "Grab a starter pack of hand-picked mods, or head to Browse to find your own." }
+                    button { class: "engage", onclick: move |_| show_starter.set(true), "Browse the starter pack" }
                 }
-            } else if filtered().is_empty() {
+            } else if !mods().is_empty() && filtered().is_empty() {
                 div { class: "mod_message", "No installed mods match your search." }
             } else {
                 div { class: "installed_list",
@@ -116,6 +142,74 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
                             query: query().trim().to_lowercase(),
                         }
                     }
+                }
+            }
+        }
+        if show_starter() {
+            div { class: "starter_overlay", onclick: move |_| show_starter.set(false),
+                div { class: "starter_panel", onclick: move |e| e.stop_propagation(),
+                    button { class: "close", onclick: move |_| show_starter.set(false), "X" }
+                    crate::starter_ui::StarterPack {
+                        sd_root: sd_root.clone(),
+                        on_close: {
+                            let root = sd_root.clone();
+                            move |_| {
+                                show_starter.set(false);
+                                mods.set(install::scan_installed_mods(&root));
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A live row for an install still in flight (or one that failed), shown above the installed list.
+#[component]
+fn DownloadRow(entry: crate::downloads::ActiveDownload) -> Element {
+    use crate::downloads::Phase;
+    rsx! {
+        div { class: "installed_row download_row",
+            div { class: "download_thumb",
+                if let Some(thumb) = entry.thumb.clone() {
+                    img { src: "{thumb}", alt: "{entry.name}" }
+                }
+            }
+            div { class: "installed_info",
+                div { class: "installed_name_line",
+                    span { class: "installed_name", "{entry.name}" }
+                }
+                match &entry.phase {
+                    Phase::Downloading { what, done, total } => {
+                        let pct = (*done * 100).checked_div(*total).unwrap_or(0);
+                        let sizes = format!(
+                            "{} / {}",
+                            crate::gamebanana::format_filesize(*done),
+                            crate::gamebanana::format_filesize(*total),
+                        );
+                        rsx! {
+                            div { class: "progress",
+                                div { class: "bar", style: "width: {pct}%" }
+                            }
+                            div { class: "installed_meta",
+                                if what.is_empty() {
+                                    "Downloading… {sizes}"
+                                } else {
+                                    "Downloading {what}… {sizes}"
+                                }
+                            }
+                        }
+                    }
+                    Phase::Working { what } => rsx! {
+                        div { class: "installed_meta",
+                            crate::mods_ui::Spinner {}
+                            " {what}"
+                        }
+                    },
+                    Phase::Error(e) => rsx! {
+                        div { class: "installed_meta dl_err", "Failed: {e}" }
+                    },
                 }
             }
         }

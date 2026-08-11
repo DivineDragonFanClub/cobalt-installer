@@ -260,7 +260,7 @@ fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
     match source {
         ModSource::GameBanana(_) => ("GameBanana", "chip gb"),
         ModSource::Nexus(_) => ("NexusMods", "chip nexus"),
-        ModSource::Manual => ("Manual", "chip manual"),
+        ModSource::Manual => ("User installed", "chip manual"),
     }
 }
 
@@ -300,12 +300,11 @@ fn InstalledRow(
                     if let Some(author) = entry.author.clone() {
                         "by "
                         {highlight(&author, &query)}
-                        " · "
+                        if entry.size_bytes > 0 { " · " }
                     }
                     if entry.size_bytes > 0 {
-                        "{crate::gamebanana::format_filesize(entry.size_bytes)} · "
+                        "{crate::gamebanana::format_filesize(entry.size_bytes)}"
                     }
-                    code { {highlight(&entry.folder, &query)} }
                 }
                 if let Some(desc) = entry.description.clone() {
                     p { class: "installed_desc", {highlight(&desc, &query)} }

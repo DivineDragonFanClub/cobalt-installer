@@ -317,21 +317,66 @@ fn ModDetailPanel(
     on_close: EventHandler<()>,
 ) -> Element {
     let detail = use_resource(move || async move { gamebanana::detail(mod_id).await });
+    // Which screenshot the lightbox is showing, if any. Lives here (not in the content
+    // component) so the keyboard loop below can drive it.
+    let mut lightbox = use_signal(|| None::<usize>);
 
-    // Escape closes the modal. The webview holds keyboard focus, so the listener lives in the
-    // page: registered while a modal is mounted, removed when it unmounts.
+    // Keyboard + scroll lock for the modal's lifetime. The webview holds keyboard focus, so
+    // the listener lives in the page: registered on mount, undone on unmount. Escape closes
+    // the lightbox if one is up, else the modal; arrow keys page the lightbox (they're only
+    // forwarded while it's open, so normal panel scrolling keeps them otherwise). The
+    // modal_open class freezes the root scroller behind the modal.
     use_future(move || async move {
-        let mut esc = document::eval(
-            "window.__esc_close = (e) => { if (e.key === 'Escape') dioxus.send(true); };\n\
+        let mut keys = document::eval(
+            // The gutter compensation is measured, not assumed: classic scrollbars occupy
+            // 11px, but macOS may hand the webview zero-width overlay scrollbars instead.
+            "const gutter = window.innerWidth - document.documentElement.clientWidth;\n\
+             document.documentElement.style.setProperty('--scroll-gutter', gutter + 'px');\n\
+             document.documentElement.classList.add('modal_open');\n\
+             window.__esc_close = (e) => {\n\
+                 if (!['Escape', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;\n\
+                 if (e.key !== 'Escape' && !document.querySelector('.lightbox_overlay')) return;\n\
+                 e.preventDefault();\n\
+                 dioxus.send(e.key);\n\
+             };\n\
              document.addEventListener('keydown', window.__esc_close);",
         );
-        while esc.recv::<bool>().await.is_ok() {
-            on_close.call(());
+        while let Ok(key) = keys.recv::<String>().await {
+            match key.as_str() {
+                "Escape" => {
+                    if lightbox().is_some() {
+                        lightbox.set(None);
+                    } else {
+                        on_close.call(());
+                    }
+                }
+                "ArrowLeft" | "ArrowRight" => {
+                    let count = detail
+                        .read()
+                        .as_ref()
+                        .and_then(|r| r.as_ref().ok())
+                        .map(|d| d.preview.images.len())
+                        .unwrap_or(0);
+                    if let Some(i) = lightbox() {
+                        if count > 0 {
+                            let i = i.min(count - 1);
+                            let next = if key == "ArrowRight" {
+                                (i + 1) % count
+                            } else {
+                                (i + count - 1) % count
+                            };
+                            lightbox.set(Some(next));
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     });
     use_drop(|| {
         document::eval(
-            "document.removeEventListener('keydown', window.__esc_close);\n\
+            "document.documentElement.classList.remove('modal_open');\n\
+             document.removeEventListener('keydown', window.__esc_close);\n\
              delete window.__esc_close;",
         );
     });
@@ -345,7 +390,7 @@ fn ModDetailPanel(
                 button { class: "close", onclick: move |_| on_close.call(()), "X" }
                 match &*detail.read() {
                     Some(Ok(d)) => rsx! {
-                        ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed }
+                        ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed, lightbox }
                     },
                     Some(Err(e)) => rsx! {
                         div { class: "mod_message error", "Couldn't load this mod: {e}" }
@@ -360,7 +405,12 @@ fn ModDetailPanel(
 }
 
 #[component]
-fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
+fn ModDetailContent(
+    detail: ModDetail,
+    sd_root: PathBuf,
+    mut installed: Signal<HashSet<u64>>,
+    mut lightbox: Signal<Option<usize>>,
+) -> Element {
     let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
@@ -441,8 +491,62 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
             div { class: "mod_screens",
                 // Every screenshot the mod has, but as the 530px pre-renders: the strip shows
                 // them 160px tall, and a dozen full-size originals per open is real weight.
-                for img in detail.preview.images.iter() {
-                    img { src: "{img.thumb_url()}" }
+                // Clicking one opens the lightbox on it.
+                for (i, img) in detail.preview.images.iter().enumerate() {
+                    img {
+                        src: "{img.thumb_url()}",
+                        alt: img.caption.clone().unwrap_or_default(),
+                        onclick: move |_| lightbox.set(Some(i)),
+                    }
+                }
+            }
+        }
+
+        if let Some(idx) = lightbox() {
+            {
+                let images = detail.preview.images.clone();
+                let n = images.len();
+                let i = idx.min(n.saturating_sub(1));
+                let img = images[i].clone();
+                let caption = img.caption.clone().unwrap_or_default();
+                rsx! {
+                    div { class: "lightbox_overlay", onclick: move |_| lightbox.set(None),
+                        if n > 1 {
+                            button {
+                                class: "lb_nav",
+                                onclick: move |e| {
+                                    e.stop_propagation();
+                                    lightbox.set(Some((i + n - 1) % n));
+                                },
+                                "‹"
+                            }
+                        }
+                        div { class: "lightbox_stage", onclick: move |e| e.stop_propagation(),
+                            img { src: "{img.full_url()}", alt: "{caption}" }
+                            if !caption.is_empty() || n > 1 {
+                                // Hangs below the image without occupying layout space, so the
+                                // image stays dead-center whether or not a caption exists.
+                                div { class: "lb_meta",
+                                    if !caption.is_empty() {
+                                        div { class: "lb_caption", "{caption}" }
+                                    }
+                                    if n > 1 {
+                                        div { class: "lb_count", "{i + 1} / {n}" }
+                                    }
+                                }
+                            }
+                        }
+                        if n > 1 {
+                            button {
+                                class: "lb_nav",
+                                onclick: move |e| {
+                                    e.stop_propagation();
+                                    lightbox.set(Some((i + 1) % n));
+                                },
+                                "›"
+                            }
+                        }
+                    }
                 }
             }
         }

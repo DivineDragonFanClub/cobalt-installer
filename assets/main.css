@@ -84,6 +84,18 @@ html {
        is transparent, so nothing shows when there's nothing to scroll. */
     overflow-y: scroll;
 }
+/* While a modal is up (class set on mount, removed on unmount), the page behind it
+   must not scroll. Hiding overflow would drop the reserved scrollbar lane and cause
+   the reflow-flash the reservation exists to prevent — so the same 11px moves to a
+   body margin for the duration and the pixels don't move. */
+html.modal_open {
+    overflow-y: hidden;
+}
+html.modal_open body {
+    /* set at lock time to the measured scrollbar width — 11px for our classic bars,
+       0 when macOS gives the webview overlay scrollbars */
+    margin-right: var(--scroll-gutter, 0px);
+}
 
 body {
     margin: 0;
@@ -1175,6 +1187,8 @@ input:focus {
        card as one region (no nested scrollboxes, no page-scrolling the overlay) */
     max-height: calc(100vh - 80px);
     overflow-y: auto;
+    /* reaching the card's scroll end must not chain into scrolling the page */
+    overscroll-behavior: contain;
 }
 .mod_detail_panel .close {
     /* pinned to the card's top-right even while its content scrolls */
@@ -1220,6 +1234,79 @@ input:focus {
     height: 160px;
     border-radius: 8px;
     border: 1px solid var(--border);
+    cursor: zoom-in;
+}
+
+/* ---- Screenshot lightbox --------------------------------------------------
+   Black glass in both themes (it frames artwork, not UI). Arrow keys and the
+   round side buttons page through; caption and position sit under the image. */
+.lightbox_overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(4, 6, 10, 0.86);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 40px 24px;
+    cursor: zoom-out;
+}
+.lightbox_stage {
+    position: relative;
+    max-width: calc(100vw - 190px);
+    cursor: default;
+}
+.lightbox_stage img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 190px);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+/* caption + counter hang below the image out of layout flow, so the image sits
+   dead-center whether they exist or not */
+.lb_meta {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(72ch, calc(100vw - 120px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    pointer-events: none;
+}
+.lb_caption {
+    color: #e8ebf1;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+}
+.lb_count {
+    color: rgba(232, 235, 241, 0.55);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.lightbox_overlay button.lb_nav {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.07);
+    color: #fff;
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+}
+.lightbox_overlay button.lb_nav:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 .mod_desc {

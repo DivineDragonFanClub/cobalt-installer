@@ -25,17 +25,8 @@ enum Source {
 pub(crate) const NEXUS_ENABLED: bool = false;
 
 #[component]
-pub fn ModBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
+pub fn ModBrowser(sd_root: PathBuf) -> Element {
     let mut source = use_signal(|| Source::GameBanana);
-
-    // A "view this mod" request from My Mods: flip to the matching source so the right child browser
-    // is mounted. That child then consumes the request and opens the mod's detail overlay. While
-    // Nexus is disabled we ignore Nexus view requests (there's no browser to open them in).
-    use_effect(move || match view_request() {
-        Some(install::ModSource::GameBanana(_)) => source.set(Source::GameBanana),
-        Some(install::ModSource::Nexus(_)) if NEXUS_ENABLED => source.set(Source::Nexus),
-        _ => {}
-    });
 
     rsx! {
         if NEXUS_ENABLED {
@@ -53,27 +44,18 @@ pub fn ModBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSour
             }
         }
         match source() {
-            Source::GameBanana => rsx! { GameBananaBrowser { sd_root: sd_root.clone(), view_request } },
-            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { sd_root: sd_root.clone(), view_request } },
+            Source::GameBanana => rsx! { GameBananaBrowser { sd_root: sd_root.clone() } },
+            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { sd_root: sd_root.clone() } },
         }
     }
 }
 
 #[component]
-fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
+fn GameBananaBrowser(sd_root: PathBuf) -> Element {
     let mut query = use_signal(String::new);
     let mut category = use_signal(|| None::<u64>);
     let mut show_nsfw = use_signal(|| false);
     let mut selected = use_signal(|| None::<u64>);
-
-    // Opened here from My Mods "View": drop the detail overlay straight onto this mod id (it fetches
-    // its own data, so the mod doesn't need to be in the current results), then clear the request.
-    use_effect(move || {
-        if let Some(install::ModSource::GameBanana(id)) = view_request() {
-            selected.set(Some(id));
-            view_request.set(None);
-        }
-    });
 
     // The results we've loaded so far (grows as the user hits "Load more").
     let mut results = use_signal(Vec::<Listing>::new);
@@ -310,13 +292,29 @@ fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_open: EventHan
 }
 
 #[component]
-fn ModDetailPanel(
+pub(crate) fn ModDetailPanel(
     mod_id: u64,
     sd_root: PathBuf,
     installed: Signal<HashSet<u64>>,
     on_close: EventHandler<()>,
+    // Storybook hooks, defaulted away in production: a preloaded detail instead of the
+    // network fetch, and a fetch that never resolves (to hold the skeleton state).
+    #[props(default)] fixture: Option<ModDetail>,
+    #[props(default)] hold_loading: bool,
 ) -> Element {
-    let detail = use_resource(move || async move { gamebanana::detail(mod_id).await });
+    let fixture_for_fetch = fixture.clone();
+    let detail = use_resource(move || {
+        let fixture = fixture_for_fetch.clone();
+        async move {
+            if hold_loading {
+                std::future::pending::<()>().await;
+            }
+            match fixture {
+                Some(d) => Ok(d),
+                None => gamebanana::detail(mod_id).await,
+            }
+        }
+    });
     // Which screenshot the lightbox is showing, if any. Lives here (not in the content
     // component) so the keyboard loop below can drive it.
     let mut lightbox = use_signal(|| None::<usize>);
@@ -387,29 +385,57 @@ fn ModDetailPanel(
                 class: "mod_detail_panel",
                 // Clicks inside the panel shouldn't close it.
                 onclick: move |e| e.stop_propagation(),
-                button { class: "close", onclick: move |_| on_close.call(()), "X" }
-                match &*detail.read() {
-                    Some(Ok(d)) => rsx! {
-                        ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed, lightbox }
-                    },
-                    Some(Err(e)) => rsx! {
-                        div { class: "mod_message error", "Couldn't load this mod: {e}" }
-                    },
-                    None => rsx! {
-                        div { class: "mod_message", "Loading…" }
-                    },
+                // Loaded content carries its own close in the header row; the corner X
+                // only covers the header-less loading/error states.
+                if !matches!(&*detail.read(), Some(Ok(_))) {
+                    button { class: "close", onclick: move |_| on_close.call(()), {crate::icons::x(15)} }
+                }
+                div { class: "mod_detail_scroll",
+                    match &*detail.read() {
+                        Some(Ok(d)) => rsx! {
+                            ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed, lightbox, on_close }
+                        },
+                        Some(Err(e)) => rsx! {
+                            div { class: "mod_message error", "Couldn't load this mod: {e}" }
+                        },
+                        None => rsx! {
+                            DetailSkeleton {}
+                        },
+                    }
                 }
             }
         }
     }
 }
 
+// Shaped like the loaded layout so the card opens at roughly its final size instead of
+// flashing a sliver that then jumps. Also a storybook story.
 #[component]
-fn ModDetailContent(
+pub(crate) fn DetailSkeleton() -> Element {
+    rsx! {
+        div { class: "detail_skeleton",
+            div { class: "skeleton_line title" }
+            div { class: "skeleton_line meta" }
+            div { class: "skeleton_screens",
+                div { class: "skeleton_box shot" }
+                div { class: "skeleton_box shot" }
+                div { class: "skeleton_box shot" }
+            }
+            div { class: "skeleton_line w90" }
+            div { class: "skeleton_line w70" }
+            div { class: "skeleton_line w55" }
+            div { class: "skeleton_box filerow" }
+        }
+    }
+}
+
+#[component]
+pub(crate) fn ModDetailContent(
     detail: ModDetail,
     sd_root: PathBuf,
     mut installed: Signal<HashSet<u64>>,
     mut lightbox: Signal<Option<usize>>,
+    on_close: EventHandler<()>,
 ) -> Element {
     let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
@@ -471,19 +497,22 @@ fn ModDetailContent(
                 }
                 div { class: "mod_detail_meta", "{meta}" }
             }
-            if is_installed {
-                button {
-                    class: "danger",
-                    onclick: {
-                        let sd = sd_root.clone();
-                        let id = detail.id;
-                        move |_| {
-                            install::uninstall_gamebanana_mod(&sd, id);
-                            installed.set(install::installed_gamebanana_ids(&sd).into_keys().collect());
-                        }
-                    },
-                    "Uninstall"
+            div { class: "mod_detail_actions",
+                if is_installed {
+                    button {
+                        class: "danger",
+                        onclick: {
+                            let sd = sd_root.clone();
+                            let id = detail.id;
+                            move |_| {
+                                install::uninstall_gamebanana_mod(&sd, id);
+                                installed.set(install::installed_gamebanana_ids(&sd).into_keys().collect());
+                            }
+                        },
+                        "Uninstall"
+                    }
                 }
+                button { class: "close", onclick: move |_| on_close.call(()), {crate::icons::x(15)} }
             }
         }
 

@@ -24,6 +24,7 @@ const INTER: Asset = asset!("/assets/fonts/Inter.woff2");
 const ICON_INSTALL: Asset = asset!("/assets/icon_forge.png");
 const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
 const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
+const ICON_SOLA: Asset = asset!("/assets/icon_sola_cave.png");
 // Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
 // before the "Open on GameBanana" link in the mod detail overlay.
 const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
@@ -36,12 +37,12 @@ const ICON_NIGHT: Asset = asset!("/assets/icon_night2.png");
 const ICON_EVENING: Asset = asset!("/assets/icon_evening2.png");
 // Alear's map sprites, standing on the hero Install button like the site's
 // クラン button character. The install views cycle the costumes per mount.
-const SPRITE_LUEUR: Asset = asset!("/assets/sprite_lueur.png");
-const SPRITE_LUEUR_F: Asset = asset!("/assets/sprite_lueur_f.png");
-const SPRITE_LUEUR_PROMO: Asset = asset!("/assets/sprite_lueur_promo.png");
-const SPRITE_LUEUR_F_PROMO: Asset = asset!("/assets/sprite_lueur_f_promo.png");
-const SPRITE_FELL: Asset = asset!("/assets/sprite_fell.png");
-const SPRITE_FELL_F: Asset = asset!("/assets/sprite_fell_f.png");
+pub(crate) const SPRITE_LUEUR: Asset = asset!("/assets/sprite_lueur.png");
+pub(crate) const SPRITE_LUEUR_F: Asset = asset!("/assets/sprite_lueur_f.png");
+pub(crate) const SPRITE_LUEUR_PROMO: Asset = asset!("/assets/sprite_lueur_promo.png");
+pub(crate) const SPRITE_LUEUR_F_PROMO: Asset = asset!("/assets/sprite_lueur_f_promo.png");
+pub(crate) const SPRITE_FELL: Asset = asset!("/assets/sprite_fell.png");
+pub(crate) const SPRITE_FELL_F: Asset = asset!("/assets/sprite_fell_f.png");
 
 // The Discord mark (filled). Lives here rather than the desktop-only icons
 // module because the footer link is shared with the Android build.
@@ -110,6 +111,9 @@ mod ftp;
 mod gamebanana;
 #[cfg(feature = "desktop")]
 mod icons;
+// Dev-only component gallery; see the Storybook nav item (debug builds only).
+#[cfg(all(feature = "desktop", debug_assertions))]
+mod storybook;
 #[cfg(feature = "desktop")]
 mod install;
 #[cfg(feature = "desktop")]
@@ -604,6 +608,7 @@ fn App() -> Element {
                          .ico_install {{ background-image: url(\"{ICON_INSTALL}\"); }}\n\
                          .ico_browse {{ background-image: url(\"{ICON_BROWSE}\"); }}\n\
                          .ico_mymods {{ background-image: url(\"{ICON_MYMODS}\"); }}\n\
+                         .ico_storybook {{ background-image: url(\"{ICON_SOLA}\"); }}\n\
                  .tt_day {{ background-image: url(\"{ICON_DAY}\"); }}\n\
                  .tt_night {{ background-image: url(\"{ICON_NIGHT}\"); }}\n\
                  .tt_evening {{ background-image: url(\"{ICON_EVENING}\"); }}\n\
@@ -738,6 +743,25 @@ enum Tab {
     Install,
     Browse,
     MyMods,
+    #[cfg(debug_assertions)]
+    Storybook,
+}
+
+// The Storybook nav entry, only in debug builds (release gets an empty fragment).
+#[cfg(all(feature = "desktop", debug_assertions))]
+fn storybook_nav(mut active_tab: Signal<Tab>) -> Element {
+    rsx! {
+        button {
+            class: if active_tab() == Tab::Storybook { "nav_item active" } else { "nav_item" },
+            onclick: move |_| active_tab.set(Tab::Storybook),
+            span { class: "nav_icon game ico_storybook" }
+            span { class: "nav_label", "Storybook" }
+        }
+    }
+}
+#[cfg(all(feature = "desktop", not(debug_assertions)))]
+fn storybook_nav(_active_tab: Signal<Tab>) -> Element {
+    rsx! {}
 }
 
 #[cfg(feature = "desktop")]
@@ -766,7 +790,6 @@ fn Body(status_message: Signal<String>) -> Element {
     });
     // Set when the user clicks "View" on a mod in My Mods: the Browse tab picks it up, switches to
     // the right source, and opens that mod's detail overlay in-app.
-    let mut view_request = use_signal(|| None::<install::ModSource>);
 
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
@@ -815,7 +838,7 @@ fn Body(status_message: Signal<String>) -> Element {
         if let Some(msg) = nxm_status() {
             div { class: "nxm_banner",
                 span { "{msg}" }
-                button { class: "close", onclick: move |_| nxm_status.set(None), "X" }
+                button { class: "close", onclick: move |_| nxm_status.set(None), {icons::x(15)} }
             }
         }
         if !onboarded() {
@@ -888,6 +911,11 @@ fn Body(status_message: Signal<String>) -> Element {
                             span { class: "nav_lock", {icons::lock(13)} }
                         }
                     }
+                    // The storybook only reveals itself to those who have earned
+                    // their 50 bond fragments (and only in debug builds).
+                    if num_clicks() >= 5 {
+                        {storybook_nav(active_tab)}
+                    }
                 }
                 div { class: "tab_content",
                     match active_tab() {
@@ -900,23 +928,22 @@ fn Body(status_message: Signal<String>) -> Element {
                         },
                         Tab::Browse => rsx! {
                             if let Some(root) = sd_root.clone() {
-                                mods_ui::ModBrowser { sd_root: root, view_request }
+                                mods_ui::ModBrowser { sd_root: root }
                             } else {
                                 div { class: "mod_message", "Pick an install target on the Install tab first." }
                             }
                         },
                         Tab::MyMods => rsx! {
                             if let Some(root) = sd_root.clone() {
-                                installed_ui::MyMods {
-                                    sd_root: root,
-                                    on_view: move |src| {
-                                        view_request.set(Some(src));
-                                        active_tab.set(Tab::Browse);
-                                    },
-                                }
+                                // "View" opens the GameBanana detail panel inside My Mods itself.
+                                installed_ui::MyMods { sd_root: root }
                             } else {
                                 div { class: "mod_message", "Pick an install target on the Install tab first." }
                             }
+                        },
+                        #[cfg(debug_assertions)]
+                        Tab::Storybook => rsx! {
+                            storybook::Storybook {}
                         },
                     }
                 }
@@ -1078,7 +1105,7 @@ fn UpdateBanner() -> Element {
                         },
                         "Update & restart"
                     }
-                    button { class: "close", onclick: move |_| update_available.set(None), "X" }
+                    button { class: "close", onclick: move |_| update_available.set(None), {icons::x(15)} }
                 }
             }
         }
@@ -1108,7 +1135,8 @@ fn Body(status_message: Signal<String>) -> Element {
                     },
                     "Get it on GitHub"
                 }
-                button { class: "close", onclick: move |_| update.set(None), "X" }
+                // No icons module on Android; the typographic × still beats a letter X.
+                button { class: "close", onclick: move |_| update.set(None), "×" }
             }
         }
         Controls { status_message }
@@ -1446,7 +1474,7 @@ pub fn SdCardSelector(mut selected_sdcard_path: Signal<String>) -> Element {
                 button {
                     class: "close",
                     onclick: move |_| selected_sdcard_path.set(String::new()),
-                    "X"
+                    {icons::x(15)}
                 }
             }
         }

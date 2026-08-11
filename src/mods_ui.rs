@@ -275,7 +275,7 @@ pub fn SkeletonCard() -> Element {
 }
 
 #[component]
-fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_open: EventHandler<()>) -> Element {
+pub(crate) fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_open: EventHandler<()>) -> Element {
     let blur = listing.has_content_ratings && !show_nsfw;
     rsx! {
         div { class: "mod_card", onclick: move |_| on_open.call(()),
@@ -324,11 +324,14 @@ fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_open: EventHan
 }
 
 #[component]
-fn ModDetailPanel(
+pub(crate) fn ModDetailPanel(
     mod_id: u64,
     sd_root: PathBuf,
     installed: Signal<HashSet<u64>>,
     on_close: EventHandler<()>,
+    // Grey out the per-file install buttons. The starter pack opens this modal just to read the
+    // description, since installing there goes through the row checkboxes instead.
+    #[props(default)] install_disabled: bool,
 ) -> Element {
     let detail = use_resource(move || async move { gamebanana::detail(mod_id).await });
 
@@ -359,7 +362,7 @@ fn ModDetailPanel(
                 button { class: "close", onclick: move |_| on_close.call(()), "X" }
                 match &*detail.read() {
                     Some(Ok(d)) => rsx! {
-                        ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed }
+                        ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed, install_disabled }
                     },
                     Some(Err(e)) => rsx! {
                         div { class: "mod_message error", "Couldn't load this mod: {e}" }
@@ -374,7 +377,7 @@ fn ModDetailPanel(
 }
 
 #[component]
-fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
+fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>, #[props(default)] install_disabled: bool) -> Element {
     let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
@@ -477,6 +480,7 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
                     sd_root: sd_root.clone(),
                     installed,
                     badge: current_badge(&f),
+                    install_disabled,
                 }
             }
             if !other.is_empty() {
@@ -492,6 +496,7 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
                                 installed,
                                 badge: (!f.version.is_empty()).then(|| f.version.clone()),
                                 muted_badge: true,
+                                install_disabled,
                             }
                         }
                     }
@@ -501,16 +506,6 @@ fn ModDetailContent(detail: ModDetail, sd_root: PathBuf, mut installed: Signal<H
 
         a { class: "mod_page_link gb_link", href: "{detail.profile_url}", "Open on GameBanana" }
     }
-}
-
-// The per-file install button and its progress/result states.
-#[derive(Clone, PartialEq)]
-enum Status {
-    Idle,
-    Downloading(u64, u64),
-    Installing,
-    Done,
-    Error(String),
 }
 
 #[component]
@@ -523,10 +518,30 @@ fn InstallRow(
     #[props(default)] badge: Option<String>,
     // Grey pill instead of blue — for other-version rows, where the tag is context, not a callout.
     #[props(default)] muted_badge: bool,
+    // Grey out the install button (the starter pack drives installs from its checkboxes instead).
+    #[props(default)] install_disabled: bool,
 ) -> Element {
-    let mut status = use_signal(|| Status::Idle);
+    // Installs run in the Body coroutine (so closing this modal doesn't cancel them). We just hand it
+    // a request and read this mod's progress back out of the shared list.
+    let installer = use_coroutine_handle::<crate::downloads::InstallRequest>();
+    let downloads = use_context::<crate::downloads::Downloads>();
+    let phase = downloads().into_iter().find(|d| d.id == detail.id).map(|d| d.phase);
     // Show "Reinstall" if this mod is already installed, since installing replaces it.
     let label = if installed().contains(&detail.id) { "Reinstall" } else { "Install" };
+
+    // Fire a download+install request off to the coroutine.
+    let start = {
+        let detail = detail.clone();
+        let file = file.clone();
+        let sd_root = sd_root.clone();
+        move |_| {
+            installer.send(crate::downloads::InstallRequest {
+                detail: detail.clone(),
+                file: file.clone(),
+                sd_root: sd_root.clone(),
+            });
+        }
+    };
 
     rsx! {
         div { class: "install_row",
@@ -541,57 +556,41 @@ fn InstallRow(
                     div { class: "file_desc", "{file.description}" }
                 }
             }
-            match status() {
-                Status::Idle => rsx! {
-                    button {
-                        class: "primary",
-                        onclick: move |_| {
-                            let url = file.download_url.clone();
-                            let detail = detail.clone();
-                            let sd = sd_root.clone();
-                            status.set(Status::Downloading(0, 0));
-                            spawn(async move {
-                                match gamebanana::download(&url, move |d, t| status.set(Status::Downloading(d, t))).await {
-                                    Ok(bytes) => {
-                                        status.set(Status::Installing);
-                                        match install::install_gamebanana_mod(&sd, &detail, &bytes) {
-                                            Ok(()) => {
-                                                installed.set(
-                                                    install::installed_gamebanana_ids(&sd).into_keys().collect(),
-                                                );
-                                                status.set(Status::Done);
-                                            }
-                                            Err(e) => status.set(Status::Error(e.to_string())),
-                                        }
-                                    }
-                                    Err(e) => status.set(Status::Error(e.to_string())),
-                                }
-                            });
-                        },
-                        "{label}"
-                    }
-                },
-                Status::Downloading(downloaded, total) => {
-                    let pct = (downloaded * 100).checked_div(total).unwrap_or(0);
+            match phase {
+                Some(crate::downloads::Phase::Downloading { what, done, total }) => {
+                    let pct = (done * 100).checked_div(total).unwrap_or(0);
                     rsx! {
                         div { class: "progress",
                             div { class: "bar", style: "width: {pct}%" }
                         }
                         span { class: "progress_label",
-                            "{gamebanana::format_filesize(downloaded)} / {gamebanana::format_filesize(total)}"
+                            if what.is_empty() {
+                                "{gamebanana::format_filesize(done)} / {gamebanana::format_filesize(total)}"
+                            } else {
+                                "{what} · {gamebanana::format_filesize(done)} / {gamebanana::format_filesize(total)}"
+                            }
                         }
                     }
                 }
-                Status::Installing => rsx! {
-                    span { class: "muted", "Installing…" }
+                Some(crate::downloads::Phase::Working { what }) => rsx! {
+                    span { class: "muted",
+                        Spinner {}
+                        " {what}"
+                    }
                 },
-                Status::Done => rsx! {
-                    span { class: "ok", "Installed!" }
-                },
-                Status::Error(e) => rsx! {
+                Some(crate::downloads::Phase::Error(e)) => rsx! {
                     div { class: "errline",
                         span { class: "err", "Error: {e}" }
-                        button { onclick: move |_| status.set(Status::Idle), "Retry" }
+                        button { onclick: start, "Retry" }
+                    }
+                },
+                None => rsx! {
+                    button {
+                        class: "primary",
+                        disabled: install_disabled,
+                        title: if install_disabled { "Pick this mod with its checkbox in the starter pack to install it" } else { "" },
+                        onclick: start,
+                        "{label}"
                     }
                 },
             }

@@ -577,6 +577,11 @@ button.engage:hover:enabled {
     align-items: center;
     opacity: 0.6;
 }
+/* Spinner shown on the My Mods nav item while a background install is running. */
+.nav_spinner {
+    display: inline-flex;
+    align-items: center;
+}
 
 /* min-width:0 lets the mod grid shrink inside the flex row instead of overflowing. */
 .tab_content {
@@ -1148,6 +1153,201 @@ input:focus {
     color: var(--faint);
     margin-top: 4px;
 }
+.empty_state .engage {
+    margin-top: 18px;
+}
+
+/* ---- Starter pack --------------------------------------------------------- */
+.starter_head {
+    margin-bottom: 18px;
+}
+.starter_head h2 {
+    font-size: 20px;
+    margin: 0 0 6px;
+}
+.starter_sub {
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 620px;
+    margin: 0;
+}
+/* Horizontal mod rows: click a row for the full detail overlay, tick the box to select it. */
+.starter_list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.starter_row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    cursor: pointer;
+}
+.starter_row:hover {
+    border-color: var(--border-strong);
+}
+.starter_row.ticked {
+    border-color: var(--accent);
+}
+.starter_row.ticked:hover {
+    border-color: var(--accent-hover);
+}
+.starter_row.done {
+    opacity: 0.7;
+}
+.starter_pick {
+    flex-shrink: 0;
+    display: flex;
+    line-height: 0;
+    cursor: pointer;
+}
+.starter_pick input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+.starter_row_thumb {
+    width: 96px;
+    height: 54px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg);
+}
+.starter_row_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.starter_row_info {
+    flex: 1;
+    min-width: 0;
+}
+.starter_row_head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.starter_row_name {
+    font-weight: 600;
+    font-size: 15px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.chip.cat {
+    flex-shrink: 0;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid transparent;
+}
+.starter_row_desc {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+    /* keep long taglines to two lines so rows stay even */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+/* Placeholder shimmer shown in place of the tagline while the mod's page loads. */
+.starter_desc_skel {
+    width: 60%;
+    max-width: 340px;
+    margin-top: 7px;
+}
+.starter_row_stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+    color: var(--faint);
+    font-size: 12px;
+}
+.starter_row_stats .stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.starter_row_end {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+}
+.starter_row_end .ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--good);
+    font-weight: 600;
+}
+.starter_row_end .muted {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+}
+.starter_row_end .err {
+    color: var(--danger);
+    font-weight: 600;
+}
+.starter_failnote {
+    margin-top: 14px;
+    color: var(--danger);
+    font-size: 13px;
+}
+.starter_actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 22px;
+}
+/* Shown as an overlay from My Mods, mirrors the mod detail overlay. */
+.starter_overlay {
+    position: fixed;
+    inset: 0;
+    background: light-dark(rgba(25, 32, 45, 0.45), rgba(0, 0, 0, 0.7));
+    backdrop-filter: blur(3px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 44px;
+    z-index: 100;
+}
+.starter_panel {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 26px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+}
+.starter_panel .close {
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 5;
+}
+/* The onboarding starter step needs more width than the device-picker card for the grid. */
+.onboard_card.wide {
+    max-width: 900px;
+}
 
 /* ---- Detail overlay ------------------------------------------------------- */
 .mod_detail_overlay {
@@ -1549,6 +1749,43 @@ input:focus {
     /* keep the buttons vertically centered against the first line of text */
     align-items: center;
     padding-top: 2px;
+}
+
+/* Live install rows (a download in progress), shown above the installed list. */
+.installed_list.downloads {
+    margin-bottom: 8px;
+}
+.download_row {
+    align-items: center;
+}
+.download_thumb {
+    width: 72px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg);
+}
+.download_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.download_row .progress {
+    height: 8px;
+    background: var(--surface-3);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 6px 0 4px;
+}
+.download_row .progress .bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
+}
+.download_row .installed_meta.dl_err {
+    color: var(--danger);
 }
 
 /* ---- Bond fragments easter egg modal -------------------------------------- */

@@ -123,7 +123,11 @@ mod mods_ui;
 #[cfg(feature = "desktop")]
 mod nexus;
 #[cfg(feature = "desktop")]
+mod downloads;
+#[cfg(feature = "desktop")]
 mod nexus_ui;
+#[cfg(feature = "desktop")]
+mod starter_ui;
 #[cfg(feature = "desktop")]
 mod updater;
 
@@ -232,12 +236,19 @@ fn mounted_volumes() -> Vec<PathBuf> {
     vols
 }
 
-// Is Cobalt actually installed at this SD root? release.zip lays down engage/cobalt (Cobalt's own
-// runtime folder), so its presence is a reliable marker. We don't check engage/mods because the
-// installer creates that folder itself, so it'd be a false positive.
+// Is Cobalt actually installed at this SD root? The real marker is Cobalt's loader patch under
+// atmosphere for Engage's title id: a subsdk9 (the loader .nso, sometimes a dev symlink) and a
+// main.npdm beside it. That's what makes the game load Cobalt, and it's there the moment Cobalt is
+// installed, however it got installed. We deliberately don't key off engage/cobalt or engage/mods,
+// the game fills engage/cobalt in on first run and we create engage/mods ourselves, so either would
+// report Cobalt as present when it isn't.
 #[cfg(feature = "desktop")]
 fn is_cobalt_installed(sd_root: &Path) -> bool {
-    sd_root.join("engage").join("cobalt").is_dir()
+    let exefs = sd_root.join("atmosphere/contents/0100A6301214E000/exefs");
+    // symlink_metadata, not exists(): a dev setup symlinks subsdk9 to a build output, and exists()
+    // would follow it and report "gone" if that build moved. We only care that the patch is placed.
+    let present = |name: &str| exefs.join(name).symlink_metadata().is_ok();
+    present("subsdk9") || present("main.npdm")
 }
 
 fn main() {
@@ -776,6 +787,13 @@ fn Body(status_message: Signal<String>) -> Element {
     // done we remember it and go straight to the main app on later launches.
     let onboarded = use_storage::<LocalStorage, bool>("onboarded".into(), || false);
     let mut active_tab = use_signal(|| Tab::Install);
+
+    // The list of in-progress installs, shared with the detail modal and My Mods via context, and a
+    // coroutine (living here in Body, so it outlives any modal) that actually runs them. A busy memo
+    // drives the sidebar spinner without re-rendering Body on every progress tick.
+    let downloads = use_context_provider(|| Signal::new(Vec::<downloads::ActiveDownload>::new()));
+    use_coroutine(move |rx| downloads::run_installer(downloads, rx));
+    let downloads_busy = use_memo(move || downloads::is_busy(&downloads()));
     // A banner for nxm:// downloads triggered from outside the app (the website's Mod Manager button).
     let mut nxm_status = use_signal(|| None::<String>);
 
@@ -907,7 +925,9 @@ fn Body(status_message: Signal<String>) -> Element {
                         onclick: move |_| active_tab.set(Tab::MyMods),
                         span { class: "nav_icon game ico_mymods" }
                         span { class: "nav_label", "My Mods" }
-                        if !cobalt_ready {
+                        if downloads_busy() {
+                            span { class: "nav_spinner", mods_ui::Spinner {} }
+                        } else if !cobalt_ready {
                             span { class: "nav_lock", {icons::lock(13)} }
                         }
                     }
@@ -967,6 +987,9 @@ fn Onboarding(
     let (sprite_light, sprite_dark) = use_hero_sprite();
     let sd_root = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
     let cobalt_ready = sd_root.as_ref().map(|p| is_cobalt_installed(p)).unwrap_or(false);
+    // Flipped on once we install Cobalt here (a device that didn't already have it), which swaps the
+    // onboarding over to the starter pack. Devices that already had Cobalt skip straight to Continue.
+    let mut show_starter = use_signal(|| false);
 
     // Is the chosen device a usable target yet? (emulator actually found on disk, or an SD folder picked)
     let target_ready = if installation_type() == "SD Card" {
@@ -991,12 +1014,30 @@ fn Onboarding(
         create_mods_directory(dest).await;
         // Setting status re-renders, and the Cobalt check above re-runs, unlocking Continue.
         status_message.set("Installation complete".to_string());
+        // They just installed Cobalt on a fresh device, so offer the starter pack next.
+        show_starter.set(true);
     };
 
     rsx! {
         div {
             id: "onboarding",
             style: "--hero-sprite-light: url('{sprite_light}'); --hero-sprite-dark: url('{sprite_dark}')",
+            if show_starter() {
+                div { class: "onboard_card wide",
+                    if let Some(root) = sd_root.clone() {
+                        starter_ui::StarterPack {
+                            sd_root: root,
+                            on_close: move |_| onboarded.set(true),
+                        }
+                    } else {
+                        button {
+                            class: "engage",
+                            onclick: move |_| onboarded.set(true),
+                            "Continue to mods"
+                        }
+                    }
+                }
+            } else {
             div { class: "onboard_card",
                 h2 { "Set up your device" }
                 p { class: "onboard_sub",
@@ -1060,6 +1101,7 @@ fn Onboarding(
                         }
                     }
                 }
+            }
             }
         }
     }

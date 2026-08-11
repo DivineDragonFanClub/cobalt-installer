@@ -13,8 +13,11 @@ const REPO_OWNER: &str = "DivineDragonFanClub";
 const REPO_NAME: &str = "cobalt-installer";
 
 // The public half of the minisign keypair the release assets are signed with (the private key lives
-// in CI as MINISIGN_SECRET_KEY). release-hub verifies each downloaded asset against this before install.
-const MINISIGN_PUBKEY: &str = "RWS4awesL6pkQfXQKSRf7bpCYQ239Vs3R9jo1t5A8RLMHMIALNWAnRnR";
+// in CI as MINISIGN_SECRET_KEY). release-hub verifies each downloaded asset against this before
+// install. This must be the FULL two-line minisign .pub content (comment line, then the base64 key):
+// release-hub feeds it to minisign-verify's PublicKey::decode, which expects both lines. A bare key
+// line fails with "Invalid encoding in minisign data".
+const MINISIGN_PUBKEY: &str = "untrusted comment: minisign public key\nRWS4awesL6pkQfXQKSRf7bpCYQ239Vs3R9jo1t5A8RLMHMIALNWAnRnR";
 
 fn build_updater() -> anyhow::Result<Updater> {
     let config = Config {

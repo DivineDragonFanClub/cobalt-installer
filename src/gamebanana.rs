@@ -5,6 +5,7 @@
 // ProfilePage for the detail view (name, description, screenshots, and the file list with its
 // download links). Everything here is anonymous GETs.
 
+use std::collections::{HashSet, VecDeque};
 use std::sync::LazyLock;
 
 use serde::Deserialize;
@@ -180,12 +181,92 @@ pub struct ModDetail {
     pub date_added: u64,
     #[serde(rename = "_tsDateModified", default)]
     pub date_modified: u64,
+    // Other mods/tools this one needs, each a [name, url] pair. Kept as raw JSON because the shape
+    // varies; we only read the url (second element) to spot GameBanana mod links. See
+    // requirement_mod_ids / install_engage_requirements.
+    #[serde(rename = "_aRequirements", default)]
+    pub requirements: Vec<serde_json::Value>,
+    // Which game this mod is for, so we can confirm a required mod is actually for Engage.
+    #[serde(rename = "_aGame", default)]
+    pub game: Option<GameRef>,
+}
+
+// Just the game id off a mod's `_aGame` object.
+#[derive(Deserialize, Clone, PartialEq, Debug)]
+pub struct GameRef {
+    #[serde(rename = "_idRow", default)]
+    pub id: u64,
 }
 
 impl ModDetail {
     pub fn author(&self) -> String {
         self.submitter.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "Unknown".into())
     }
+
+    // The file to grab for a one-click install where the user doesn't pick one (the starter pack).
+    // Modders keep old zips attached, so the newest upload is the safe default for the main release.
+    pub fn primary_file(&self) -> Option<&ModFile> {
+        self.files.iter().max_by_key(|f| f.date_added)
+    }
+
+    pub fn game_id(&self) -> Option<u64> {
+        self.game.as_ref().map(|g| g.id)
+    }
+
+    // The GameBanana mod ids this mod lists as requirements (deduped, order kept). Requirement
+    // entries that aren't GameBanana mod links (GitHub, tools, other sites) are dropped.
+    pub fn requirement_mod_ids(&self) -> Vec<u64> {
+        let mut ids = Vec::new();
+        for entry in &self.requirements {
+            if let Some(id) = entry.get(1).and_then(|v| v.as_str()).and_then(requirement_mod_id) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
+    }
+}
+
+// The mod id out of a GameBanana mod url like https://gamebanana.com/mods/574346, else None.
+fn requirement_mod_id(url: &str) -> Option<u64> {
+    let marker = "gamebanana.com/mods/";
+    let start = url.find(marker)? + marker.len();
+    let digits: String = url[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+// Work out the FE Engage GameBanana mods that `root` requires, following their requirements too, and
+// return each one's detail plus the file to install. Nothing is downloaded or installed here (the
+// caller does that so it can be transactional). Requirements that point at GitHub (Cobalt), a tool,
+// or another game are skipped, as are mods already in `already_installed`. Tracks what it's seen so
+// a requirement loop can't spin forever.
+pub async fn resolve_engage_requirements(
+    root: &ModDetail,
+    already_installed: &HashSet<u64>,
+) -> Vec<(ModDetail, ModFile)> {
+    let mut out = Vec::new();
+    let mut visited: HashSet<u64> = HashSet::new();
+    visited.insert(root.id);
+    let mut queue: VecDeque<u64> = root.requirement_mod_ids().into_iter().collect();
+
+    while let Some(rid) = queue.pop_front() {
+        if !visited.insert(rid) || already_installed.contains(&rid) {
+            continue;
+        }
+        let Ok(req) = detail(rid).await else { continue };
+        // Only auto-install actual Engage mods, never another game's mod or a tool page.
+        if req.game_id() != Some(GAME_ID) {
+            continue;
+        }
+        let Some(file) = req.primary_file().cloned() else { continue };
+        // Follow this requirement's own requirements as well.
+        for id in req.requirement_mod_ids() {
+            queue.push_back(id);
+        }
+        out.push((req, file));
+    }
+    out
 }
 
 // A mod category for the filter dropdown (Gameplay, Skins, Map, ...).
@@ -215,12 +296,22 @@ async fn fetch_listings(url: &str) -> anyhow::Result<Vec<Listing>> {
         .collect())
 }
 
-// Browse the newest mods for the game, one page at a time (15 per page). Uses Mod/Index, not the
-// game Subfeed, because the Subfeed also lists Requests/Questions/WiPs whose ids would open the
-// wrong thing in the detail view.
-pub async fn browse(page: u32) -> anyhow::Result<Vec<Listing>> {
+// The sort orders the Mod/Index endpoint accepts, as (api value, label) pairs for the dropdown.
+// First entry is the default. These only apply to browse/category listings, a text search sorts by
+// relevance instead (the search endpoint ignores these keys).
+pub const SORTS: &[(&str, &str)] = &[
+    ("Generic_LatestModified", "Latest updated"),
+    ("Generic_Newest", "Newest"),
+    ("Generic_MostLiked", "Most liked"),
+    ("Generic_MostDownloaded", "Most downloaded"),
+];
+
+// Browse the game's mods, one page at a time (15 per page), in the given sort order (a `_sSort`
+// value from SORTS). Uses Mod/Index, not the game Subfeed, because the Subfeed also lists
+// Requests/Questions/WiPs whose ids would open the wrong thing in the detail view.
+pub async fn browse(page: u32, sort: &str) -> anyhow::Result<Vec<Listing>> {
     let url = format!(
-        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}"
+        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort={sort}&_aFilters%5BGeneric_Game%5D={GAME_ID}"
     );
     fetch_listings(&url).await
 }
@@ -241,11 +332,11 @@ pub async fn categories() -> anyhow::Result<Vec<Category>> {
     Ok(cats)
 }
 
-// Browse the newest mods in one category. Uses the Mod/Index endpoint, which is the one that
-// actually filters server-side (the Subfeed ignores a category filter).
-pub async fn by_category(category_id: u64, page: u32) -> anyhow::Result<Vec<Listing>> {
+// Browse the mods in one category, in the given sort order. Uses the Mod/Index endpoint, which is
+// the one that actually filters server-side (the Subfeed ignores a category filter).
+pub async fn by_category(category_id: u64, page: u32, sort: &str) -> anyhow::Result<Vec<Listing>> {
     let url = format!(
-        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}&_aFilters%5BGeneric_Category%5D={category_id}"
+        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort={sort}&_aFilters%5BGeneric_Game%5D={GAME_ID}&_aFilters%5BGeneric_Category%5D={category_id}"
     );
     fetch_listings(&url).await
 }
@@ -255,6 +346,20 @@ pub async fn detail(id: u64) -> anyhow::Result<ModDetail> {
     let url = format!("https://gamebanana.com/apiv11/Mod/{id}/ProfilePage");
     let detail: ModDetail = CLIENT.get(&url).send().await?.error_for_status()?.json().await?;
     Ok(detail)
+}
+
+// A hand-picked GameBanana collection we offer new users as a "starter pack" (a curated set of
+// beginner-friendly mods). It's a real collection on the site, so re-curating the pack is just a
+// matter of editing that collection, no new build needed. Change this id to point at a different one.
+pub const STARTER_COLLECTION: u64 = 217538;
+
+// The mods inside a GameBanana collection. Records come back in the same shape as a browse page, so
+// one call gives us everything the starter-pack cards need. One page (15) is plenty for a pack.
+pub async fn collection_items(collection_id: u64, page: u32) -> anyhow::Result<Vec<Listing>> {
+    let url = format!(
+        "https://gamebanana.com/apiv11/Collection/{collection_id}/Items?_nPage={page}&_nPerpage=15"
+    );
+    fetch_listings(&url).await
 }
 
 // Download an archive fully into memory, reporting (downloaded, total) bytes as it goes. Mods are

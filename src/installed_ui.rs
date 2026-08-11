@@ -24,6 +24,21 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         install::installed_gamebanana_ids(&ids_root).into_keys().collect::<HashSet<u64>>()
     });
 
+    // In-progress installs from the Body coroutine, shown as live rows above the list. A finished
+    // install drops out of this list, so re-scan the folder whenever the set of active ids changes
+    // (memoized so download progress ticks don't trigger a rescan) to surface the new mod.
+    let downloads = use_context::<crate::downloads::Downloads>();
+    let active_ids = use_memo(move || {
+        let mut ids: Vec<u64> = downloads().iter().map(|d| d.id).collect();
+        ids.sort();
+        ids
+    });
+    let rescan_root = sd_root.clone();
+    use_effect(move || {
+        let _ = active_ids();
+        mods.set(install::scan_installed_mods(&rescan_root));
+    });
+
     let refresh_root = sd_root.clone();
     let refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
 
@@ -38,7 +53,9 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
     // (author comes from the mod's config.yaml, which the scanner already
     // parses), then the chosen sort. installed_at is filesystem metadata.
     let mut query = use_signal(String::new);
-    let mut sort_by = use_signal(|| "name".to_string());
+    let mut sort_by = use_signal(|| "recent".to_string());
+    // The starter-pack offer, shown as an overlay from the empty state.
+    let mut show_starter = use_signal(|| false);
     let filtered = use_memo(move || {
         let q = query().trim().to_lowercase();
         let mut list = mods();
@@ -106,13 +123,22 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                 }
             }
 
-            if mods().is_empty() {
+            if !downloads().is_empty() {
+                div { class: "installed_list downloads",
+                    for d in downloads() {
+                        DownloadRow { key: "dl{d.id}", entry: d.clone() }
+                    }
+                }
+            }
+
+            if mods().is_empty() && downloads().is_empty() {
                 div { class: "empty_state",
                     div { class: "empty_icon", {crate::icons::package(40)} }
                     div { class: "empty_title", "No mods installed yet" }
-                    div { class: "empty_sub", "Head to Browse to find and install mods." }
+                    div { class: "empty_sub", "Grab a starter pack of hand-picked mods, or head to Browse to find your own." }
+                    button { class: "engage", onclick: move |_| show_starter.set(true), "Browse the starter pack" }
                 }
-            } else if filtered().is_empty() {
+            } else if !mods().is_empty() && filtered().is_empty() {
                 div { class: "mod_message", "No installed mods match your search." }
             } else {
                 div { class: "installed_list",
@@ -150,6 +176,75 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                         mods.set(install::scan_installed_mods(&root));
                     }
                 },
+            }
+        }
+
+        if show_starter() {
+            div { class: "starter_overlay", onclick: move |_| show_starter.set(false),
+                div { class: "starter_panel", onclick: move |e| e.stop_propagation(),
+                    button { class: "close", onclick: move |_| show_starter.set(false), "X" }
+                    crate::starter_ui::StarterPack {
+                        sd_root: sd_root.clone(),
+                        on_close: {
+                            let root = sd_root.clone();
+                            move |_| {
+                                show_starter.set(false);
+                                mods.set(install::scan_installed_mods(&root));
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A live row for an install still in flight (or one that failed), shown above the installed list.
+#[component]
+fn DownloadRow(entry: crate::downloads::ActiveDownload) -> Element {
+    use crate::downloads::Phase;
+    rsx! {
+        div { class: "installed_row download_row",
+            div { class: "download_thumb",
+                if let Some(thumb) = entry.thumb.clone() {
+                    img { src: "{thumb}", alt: "{entry.name}" }
+                }
+            }
+            div { class: "installed_info",
+                div { class: "installed_name_line",
+                    span { class: "installed_name", "{entry.name}" }
+                }
+                match &entry.phase {
+                    Phase::Downloading { what, done, total } => {
+                        let pct = (*done * 100).checked_div(*total).unwrap_or(0);
+                        let sizes = format!(
+                            "{} / {}",
+                            crate::gamebanana::format_filesize(*done),
+                            crate::gamebanana::format_filesize(*total),
+                        );
+                        rsx! {
+                            div { class: "progress",
+                                div { class: "bar", style: "width: {pct}%" }
+                            }
+                            div { class: "installed_meta",
+                                if what.is_empty() {
+                                    "Downloading… {sizes}"
+                                } else {
+                                    "Downloading {what}… {sizes}"
+                                }
+                            }
+                        }
+                    }
+                    Phase::Working { what } => rsx! {
+                        div { class: "installed_meta",
+                            crate::mods_ui::Spinner {}
+                            " {what}"
+                        }
+                    },
+                    Phase::Error(e) => rsx! {
+                        div { class: "installed_meta dl_err", "Failed: {e}" }
+                    },
+                }
             }
         }
     }
@@ -199,7 +294,7 @@ fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
     match source {
         ModSource::GameBanana(_) => ("GameBanana", "chip gb"),
         ModSource::Nexus(_) => ("NexusMods", "chip nexus"),
-        ModSource::Manual => ("Manual", "chip manual"),
+        ModSource::Manual => ("User installed", "chip manual"),
     }
 }
 
@@ -216,15 +311,6 @@ fn InstalledRow(
     // Uninstall is destructive, so the button asks for a second click to confirm.
     let mut confirming = use_signal(|| false);
     let (chip_label, chip_class) = source_chip(&entry.source);
-
-    let open_entry = {
-        let path = entry.path.clone();
-        move |_| {
-            // A folder opens directly, a .zip mod opens its parent so we don't try to launch the zip.
-            let target = if path.is_dir() { path.clone() } else { path.parent().map(PathBuf::from).unwrap_or_else(|| path.clone()) };
-            let _ = crate::open_dir(target);
-        }
-    };
 
     let do_uninstall = {
         let path = entry.path.clone();
@@ -249,12 +335,11 @@ fn InstalledRow(
                     if let Some(author) = entry.author.clone() {
                         "by "
                         {highlight(&author, &query)}
-                        " · "
+                        if entry.size_bytes > 0 { " · " }
                     }
                     if entry.size_bytes > 0 {
-                        "{crate::gamebanana::format_filesize(entry.size_bytes)} · "
+                        "{crate::gamebanana::format_filesize(entry.size_bytes)}"
                     }
-                    code { {highlight(&entry.folder, &query)} }
                 }
                 if let Some(desc) = entry.description.clone() {
                     p { class: "installed_desc", {highlight(&desc, &query)} }
@@ -270,7 +355,6 @@ fn InstalledRow(
                         "View"
                     }
                 }
-                button { class: "ghost", onclick: open_entry, "Open" }
                 if confirming() {
                     button { class: "danger", onclick: do_uninstall, "Confirm remove" }
                     button { class: "ghost", onclick: move |_| confirming.set(false), "Cancel" }

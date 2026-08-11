@@ -559,13 +559,18 @@ pub fn install_nexus_mod(sd_root: &Path, meta: &NexusMeta, bytes: &[u8]) -> Resu
 
 // Find the mod's real root inside the archive and return the prefix to strip to reach it.
 //
-// Cobalt's mod root is the folder that directly holds patches/, Data/, or a config.yaml. Archives
-// often bury that under one or more wrapper folders ("My Mod v1.2/", "My Mod/inner/", a doubled
-// folder from a bad re-zip, ...). We locate the shallowest of those markers across all entries and
-// strip everything above it, so any depth of intermediate directory is handled. A correctly laid
-// out zip has the marker at depth 0 and nothing is stripped. Matching is case-insensitive since
-// Cobalt lowercases paths anyway.
+// Cobalt's mod root is the folder that directly holds patches/, Data/, a config.yaml, or a plugin
+// .nro. Archives often bury that under one or more wrapper folders ("My Mod v1.2/", "My Mod/inner/",
+// a doubled folder from a bad re-zip, ...). We locate the shallowest of those markers across all
+// entries and strip everything above it, so any depth of intermediate directory is handled. A
+// correctly laid out zip has the marker at depth 0 and nothing is stripped. Matching is
+// case-insensitive since Cobalt lowercases paths anyway.
 fn root_prefix(names: &[String]) -> String {
+    // A file whose folder is the mod root: config.yaml, or a plugin .nro (some plugin zips ship just
+    // the .nro with no patches/Data/config, so it's the only marker we have to go on).
+    let is_file_marker =
+        |c: &str| c.eq_ignore_ascii_case("config.yaml") || c.to_ascii_lowercase().ends_with(".nro");
+
     let mut best: Option<String> = None;
 
     for name in names {
@@ -577,17 +582,17 @@ fn root_prefix(names: &[String]) -> String {
         // The shallowest component in this path that marks a mod root.
         let marker = comps.iter().position(|c| {
             let is_dir = c.eq_ignore_ascii_case("patches") || c.eq_ignore_ascii_case("Data");
-            c.eq_ignore_ascii_case("config.yaml") || is_dir
+            is_dir || is_file_marker(c)
         });
 
         let Some(i) = marker else { continue };
-        // A config.yaml marker has to be the last component (it's a file). A patches/Data marker
-        // has to have something under it (it's a directory in the path).
-        let is_config = comps[i].eq_ignore_ascii_case("config.yaml");
-        if is_config && i + 1 != comps.len() {
+        // A file marker (config.yaml / .nro) has to be the last component. A patches/Data marker has
+        // to have something under it (it's a directory in the path).
+        let is_file = is_file_marker(comps[i]);
+        if is_file && i + 1 != comps.len() {
             continue;
         }
-        if !is_config && i + 1 >= comps.len() {
+        if !is_file && i + 1 >= comps.len() {
             continue;
         }
 
@@ -803,6 +808,19 @@ mod tests {
             "patches/xml/Shop.xml".to_string(),
         ];
         assert_eq!(root_prefix(&decoy), "");
+
+        // A plugin zip with only a .nro (no patches/Data/config) under a wrapper folder: the folder
+        // holding the .nro is the root, so the wrapper gets stripped.
+        let plugin = vec!["Skill Commands Plugin/skill_commands.nro".to_string()];
+        assert_eq!(root_prefix(&plugin), "Skill Commands Plugin/");
+
+        // A .nro already at the root, nothing to strip (case-insensitive on the extension).
+        let flat_plugin = vec!["my_plugin.NRO".to_string()];
+        assert_eq!(root_prefix(&flat_plugin), "");
+
+        // A .nro buried under patches/ is just a data file, patches/ still marks the root.
+        let nro_in_patches = vec!["Wrapper/patches/bin/thing.nro".to_string()];
+        assert_eq!(root_prefix(&nro_in_patches), "Wrapper/");
 
         // No recognizable mod root, left alone (extracted as-is).
         let unknown = vec!["stuff/readme.txt".to_string()];

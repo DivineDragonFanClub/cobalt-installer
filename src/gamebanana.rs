@@ -208,12 +208,22 @@ async fn fetch_listings(url: &str) -> anyhow::Result<Vec<Listing>> {
         .collect())
 }
 
-// Browse the newest mods for the game, one page at a time (15 per page). Uses Mod/Index, not the
-// game Subfeed, because the Subfeed also lists Requests/Questions/WiPs whose ids would open the
-// wrong thing in the detail view.
-pub async fn browse(page: u32) -> anyhow::Result<Vec<Listing>> {
+// The sort orders the Mod/Index endpoint accepts, as (api value, label) pairs for the dropdown.
+// First entry is the default. These only apply to browse/category listings, a text search sorts by
+// relevance instead (the search endpoint ignores these keys).
+pub const SORTS: &[(&str, &str)] = &[
+    ("Generic_LatestModified", "Latest updated"),
+    ("Generic_Newest", "Newest"),
+    ("Generic_MostLiked", "Most liked"),
+    ("Generic_MostDownloaded", "Most downloaded"),
+];
+
+// Browse the game's mods, one page at a time (15 per page), in the given sort order (a `_sSort`
+// value from SORTS). Uses Mod/Index, not the game Subfeed, because the Subfeed also lists
+// Requests/Questions/WiPs whose ids would open the wrong thing in the detail view.
+pub async fn browse(page: u32, sort: &str) -> anyhow::Result<Vec<Listing>> {
     let url = format!(
-        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}"
+        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort={sort}&_aFilters%5BGeneric_Game%5D={GAME_ID}"
     );
     fetch_listings(&url).await
 }
@@ -234,11 +244,11 @@ pub async fn categories() -> anyhow::Result<Vec<Category>> {
     Ok(cats)
 }
 
-// Browse the newest mods in one category. Uses the Mod/Index endpoint, which is the one that
-// actually filters server-side (the Subfeed ignores a category filter).
-pub async fn by_category(category_id: u64, page: u32) -> anyhow::Result<Vec<Listing>> {
+// Browse the mods in one category, in the given sort order. Uses the Mod/Index endpoint, which is
+// the one that actually filters server-side (the Subfeed ignores a category filter).
+pub async fn by_category(category_id: u64, page: u32, sort: &str) -> anyhow::Result<Vec<Listing>> {
     let url = format!(
-        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort=Generic_LatestModified&_aFilters%5BGeneric_Game%5D={GAME_ID}&_aFilters%5BGeneric_Category%5D={category_id}"
+        "https://gamebanana.com/apiv11/Mod/Index?_nPage={page}&_nPerpage=15&_sSort={sort}&_aFilters%5BGeneric_Game%5D={GAME_ID}&_aFilters%5BGeneric_Category%5D={category_id}"
     );
     fetch_listings(&url).await
 }

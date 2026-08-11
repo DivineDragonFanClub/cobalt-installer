@@ -43,7 +43,7 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
     // (author comes from the mod's config.yaml, which the scanner already
     // parses), then the chosen sort. installed_at is filesystem metadata.
     let mut query = use_signal(String::new);
-    let mut sort_by = use_signal(|| "name".to_string());
+    let mut sort_by = use_signal(|| "recent".to_string());
     // The starter-pack offer, shown as an overlay from the empty state.
     let mut show_starter = use_signal(|| false);
     let filtered = use_memo(move || {
@@ -277,15 +277,6 @@ fn InstalledRow(
     let mut confirming = use_signal(|| false);
     let (chip_label, chip_class) = source_chip(&entry.source);
 
-    let open_entry = {
-        let path = entry.path.clone();
-        move |_| {
-            // A folder opens directly, a .zip mod opens its parent so we don't try to launch the zip.
-            let target = if path.is_dir() { path.clone() } else { path.parent().map(PathBuf::from).unwrap_or_else(|| path.clone()) };
-            let _ = crate::open_dir(target);
-        }
-    };
-
     let do_uninstall = {
         let path = entry.path.clone();
         let root = sd_root.clone();
@@ -335,7 +326,6 @@ fn InstalledRow(
                         "View"
                     }
                 }
-                button { class: "ghost", onclick: open_entry, "Open" }
                 if confirming() {
                     button { class: "danger", onclick: do_uninstall, "Confirm remove" }
                     button { class: "ghost", onclick: move |_| confirming.set(false), "Cancel" }

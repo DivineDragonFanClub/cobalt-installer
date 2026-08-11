@@ -88,10 +88,25 @@ fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModS
 
     // Which GameBanana mods are already installed, so we can badge them. Refreshed after changes.
     let installed_root = sd_root.clone();
-    let installed = use_signal(move || {
+    let mut installed = use_signal(move || {
         install::installed_gamebanana_ids(&installed_root)
             .into_keys()
             .collect::<HashSet<u64>>()
+    });
+
+    // A background install (from the Body coroutine) finishes silently by dropping out of the shared
+    // list, so re-scan what's on disk whenever the set of in-progress ids changes. That picks up a
+    // just-finished mod for the card badge and flips the detail modal's button to "Reinstall".
+    let downloads = use_context::<crate::downloads::Downloads>();
+    let active_ids = use_memo(move || {
+        let mut ids: Vec<u64> = downloads().iter().map(|d| d.id).collect();
+        ids.sort();
+        ids
+    });
+    let rescan_root = sd_root.clone();
+    use_effect(move || {
+        let _ = active_ids();
+        installed.set(install::installed_gamebanana_ids(&rescan_root).into_keys().collect());
     });
 
     // Whenever the search text, category, or sort changes, start over from page 1.

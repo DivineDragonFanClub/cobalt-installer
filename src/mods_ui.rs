@@ -63,6 +63,7 @@ pub fn ModBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSour
 fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModSource>>) -> Element {
     let mut query = use_signal(String::new);
     let mut category = use_signal(|| None::<u64>);
+    let mut sort = use_signal(|| gamebanana::SORTS[0].0.to_string());
     let mut show_nsfw = use_signal(|| false);
     let mut selected = use_signal(|| None::<u64>);
 
@@ -93,17 +94,18 @@ fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModS
             .collect::<HashSet<u64>>()
     });
 
-    // Whenever the search text or category changes, start over from page 1.
+    // Whenever the search text, category, or sort changes, start over from page 1.
     use_effect(move || {
         let q = query().trim().to_string();
         let cat = category();
+        let s = sort();
         results.set(Vec::new());
         page.set(1);
         has_more.set(true);
         error.set(None);
         loading.set(true);
         spawn(async move {
-            match fetch(&q, cat, 1).await {
+            match fetch(&q, cat, &s, 1).await {
                 Ok(list) => {
                     has_more.set(list.len() >= 15);
                     results.set(list);
@@ -121,10 +123,11 @@ fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModS
         }
         let q = query().trim().to_string();
         let cat = category();
+        let s = sort();
         let next = page() + 1;
         loading.set(true);
         spawn(async move {
-            match fetch(&q, cat, next).await {
+            match fetch(&q, cat, &s, next).await {
                 Ok(list) => {
                     has_more.set(list.len() >= 15);
                     results.write().extend(list);
@@ -159,6 +162,16 @@ fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModS
                         for c in cats.clone() {
                             option { value: "{c.id}", "{c.name}" }
                         }
+                    }
+                }
+                select {
+                    class: "category_select",
+                    value: "{sort}",
+                    // A text search comes back by relevance, so sort only applies while browsing.
+                    disabled: query().trim().len() >= 2,
+                    onchange: move |e| sort.set(e.value()),
+                    for (val, label) in gamebanana::SORTS.iter() {
+                        option { value: "{val}", "{label}" }
                     }
                 }
                 label { class: "nsfw_toggle",
@@ -228,13 +241,14 @@ fn GameBananaBrowser(sd_root: PathBuf, view_request: Signal<Option<install::ModS
 }
 
 // Pick the right API call for the current filters: text search wins, then category, else the feed.
-async fn fetch(query: &str, category: Option<u64>, page: u32) -> anyhow::Result<Vec<Listing>> {
+// The sort only applies to the browse/category listings, a text search comes back by relevance.
+async fn fetch(query: &str, category: Option<u64>, sort: &str, page: u32) -> anyhow::Result<Vec<Listing>> {
     if query.len() >= 2 {
         gamebanana::search(query, page).await
     } else if let Some(cat) = category {
-        gamebanana::by_category(cat, page).await
+        gamebanana::by_category(cat, page, sort).await
     } else {
-        gamebanana::browse(page).await
+        gamebanana::browse(page, sort).await
     }
 }
 

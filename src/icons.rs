@@ -86,5 +86,13 @@ pub fn check(size: u32) -> Element {
     })
 }
 
+// A crisp ×, for close/dismiss buttons (the letter X reads as text, not a control).
+pub fn x(size: u32) -> Element {
+    stroke(size, rsx! {
+        path { d: "M18 6 6 18" }
+        path { d: "m6 6 12 12" }
+    })
+}
+
 // (The theme toggle now uses the game's Day/Night/Evening icons, injected as
 // background images from main.rs.)

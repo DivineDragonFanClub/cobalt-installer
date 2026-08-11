@@ -84,6 +84,18 @@ html {
        is transparent, so nothing shows when there's nothing to scroll. */
     overflow-y: scroll;
 }
+/* While a modal is up (class set on mount, removed on unmount), the page behind it
+   must not scroll. Hiding overflow would drop the reserved scrollbar lane and cause
+   the reflow-flash the reservation exists to prevent — so the same 11px moves to a
+   body margin for the duration and the pixels don't move. */
+html.modal_open {
+    overflow-y: hidden;
+}
+html.modal_open body {
+    /* set at lock time to the measured scrollbar width — 11px for our classic bars,
+       0 when macOS gives the webview overlay scrollbars */
+    margin-right: var(--scroll-gutter, 0px);
+}
 
 body {
     margin: 0;
@@ -371,21 +383,27 @@ button.danger_outline:hover:enabled {
 }
 
 button.close {
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
-    background: transparent;
+    /* text fallback size (the Android banner's ×); desktop uses the svg icon */
+    font-size: 15px;
+    line-height: 1;
+    /* translucent backdrop: in the detail modal this button floats sticky over
+       scrolling content and needs to stay legible against anything */
+    background: light-dark(rgba(255, 255, 255, 0.72), rgba(20, 24, 31, 0.72));
     border-color: var(--border);
     color: var(--muted);
-    border-radius: var(--radius-sm);
+    border-radius: 999px;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
 button.close:hover:enabled {
     color: var(--text);
-    background: var(--surface-2);
+    background: light-dark(#ffffff, #232b37);
+    border-color: var(--border-strong);
 }
 
 /* The install CTA, gradient-border edition: a flat modern face wrapped in a
@@ -1117,9 +1135,48 @@ input:focus {
     height: 11px;
     border-radius: 4px;
 }
+.skeleton_line.w90 { width: 90%; }
 .skeleton_line.w70 { width: 70%; }
 .skeleton_line.w55 { width: 55%; }
 .skeleton_line.w40 { width: 40%; }
+
+/* Detail-panel skeleton: mirrors the loaded layout's geometry (title, meta,
+   screenshot strip, description lines, file row). */
+.detail_skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.detail_skeleton .skeleton_line.title {
+    height: 20px;
+    width: 34%;
+    border-radius: 5px;
+}
+.detail_skeleton .skeleton_line.meta {
+    width: 46%;
+    margin-bottom: 8px;
+}
+.detail_skeleton .skeleton_screens {
+    display: flex;
+    gap: 10px;
+    overflow: hidden;
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+}
+.detail_skeleton .skeleton_box.shot {
+    width: 285px;
+    height: 160px;
+    flex-shrink: 0;
+    aspect-ratio: auto;
+    border-radius: 8px;
+}
+.detail_skeleton .skeleton_box.filerow {
+    width: 100%;
+    height: 66px;
+    aspect-ratio: auto;
+    border-radius: 6px;
+    margin-top: 8px;
+}
 
 .mod_message {
     color: var(--muted);
@@ -1127,6 +1184,47 @@ input:focus {
 }
 .mod_message.error {
     color: light-dark(#bf3a31, #ec7c74);
+}
+
+/* ---- Storybook (debug builds only) ---------------------------------------- */
+#storybook {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.sb_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.sb_chips button.sb_active {
+    border-color: var(--accent);
+    color: var(--text);
+}
+.sb_rows {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.sb_row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+/* stories that frame the modal card render it inline, not as an overlay */
+.sb_frame {
+    max-width: 980px;
+}
+.sb_sprite_demo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.sb_cap {
+    font-size: 11px;
+    color: var(--faint);
 }
 
 /* ---- Empty state ---------------------------------------------------------- */
@@ -1368,28 +1466,44 @@ input:focus {
     background: var(--surface);
     border: 1px solid var(--border-strong);
     border-radius: 14px;
-    padding: 26px;
     width: 100%;
     box-shadow: var(--shadow-lg);
-    /* the card always fits the window; overflowing content scrolls inside the
-       card as one region (no nested scrollboxes, no page-scrolling the overlay) */
+    /* the card always fits the window; scrolling happens in .mod_detail_scroll,
+       the shell just clips it to the rounded corners */
     max-height: calc(100vh - 80px);
-    overflow-y: auto;
+    display: flex;
+    overflow: hidden;
 }
-.mod_detail_panel .close {
-    /* pinned to the card's top-right even while its content scrolls */
-    position: sticky;
-    top: 0;
-    float: right;
+.mod_detail_scroll {
+    flex: 1;
+    padding: 26px;
+    overflow-y: auto;
+    /* reaching the card's scroll end must not chain into scrolling the page */
+    overscroll-behavior: contain;
+}
+/* corner X for the header-less loading/error states only (direct shell child);
+   loaded content puts its close in the header's action row instead */
+.mod_detail_panel > .close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
     z-index: 5;
+}
+.mod_detail_actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
 }
 
 .mod_detail_head {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    /* actions center against the full title block (title + subtitle + meta) */
+    align-items: center;
     gap: 16px;
-    margin: 0 34px 16px 0;
+    /* the close button now lives in the head's action row, no corner clearance needed */
+    margin: 0 0 16px;
 }
 .mod_detail_title {
     font-size: 20px;
@@ -1420,6 +1534,79 @@ input:focus {
     height: 160px;
     border-radius: 8px;
     border: 1px solid var(--border);
+    cursor: zoom-in;
+}
+
+/* ---- Screenshot lightbox --------------------------------------------------
+   Black glass in both themes (it frames artwork, not UI). Arrow keys and the
+   round side buttons page through; caption and position sit under the image. */
+.lightbox_overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(4, 6, 10, 0.86);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 40px 24px;
+    cursor: zoom-out;
+}
+.lightbox_stage {
+    position: relative;
+    max-width: calc(100vw - 190px);
+    cursor: default;
+}
+.lightbox_stage img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 190px);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+/* caption + counter hang below the image out of layout flow, so the image sits
+   dead-center whether they exist or not */
+.lb_meta {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(72ch, calc(100vw - 120px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    pointer-events: none;
+}
+.lb_caption {
+    color: #e8ebf1;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+}
+.lb_count {
+    color: rgba(232, 235, 241, 0.55);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.lightbox_overlay button.lb_nav {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.07);
+    color: #fff;
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+}
+.lightbox_overlay button.lb_nav:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 .mod_desc {
@@ -1951,11 +2138,6 @@ button.danger:hover:enabled {
         linear-gradient(to right, rgba(150, 40, 34, 0.85), rgba(80, 20, 16, 0.85)) border-box;
     background-color: #fff;
     box-shadow: 0 0 12px light-dark(rgba(180, 50, 42, 0.28), rgba(255, 120, 110, 0.22));
-}
-
-/* the close X stays flat, just squared */
-button.close {
-    border-radius: 0;
 }
 
 

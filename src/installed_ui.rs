@@ -2,6 +2,7 @@
 // installed it or the user dropped it in by hand. Each row shows where the mod came from and lets
 // the user open its folder or remove it. The list is just a scan of the folder, no database.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
@@ -9,10 +10,19 @@ use dioxus::prelude::*;
 use crate::install::{self, InstalledMod, ModSource};
 
 #[component]
-pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
+pub fn MyMods(sd_root: PathBuf) -> Element {
     // Scan once on mount, then re-scan whenever we change something (uninstall) or the user asks.
     let scan_root = sd_root.clone();
     let mut mods = use_signal(move || install::scan_installed_mods(&scan_root));
+
+    // "View" opens the browser's detail panel right here as an overlay — no tab jump. The
+    // panel fetches its own data from the GameBanana id; this set feeds its Installed badge
+    // and gets refreshed on open so it reflects reality even after outside changes.
+    let mut viewing = use_signal(|| None::<u64>);
+    let ids_root = sd_root.clone();
+    let mut installed_ids = use_signal(move || {
+        install::installed_gamebanana_ids(&ids_root).into_keys().collect::<HashSet<u64>>()
+    });
 
     // In-progress installs from the Body coroutine, shown as live rows above the list. A finished
     // install drops out of this list, so re-scan the folder whenever the set of active ids changes
@@ -138,13 +148,37 @@ pub fn MyMods(sd_root: PathBuf, on_view: EventHandler<ModSource>) -> Element {
                             entry: m.clone(),
                             sd_root: sd_root.clone(),
                             mods,
-                            on_view,
+                            on_view: {
+                                let root = sd_root.clone();
+                                move |id| {
+                                    installed_ids
+                                        .set(install::installed_gamebanana_ids(&root).into_keys().collect());
+                                    viewing.set(Some(id));
+                                }
+                            },
                             query: query().trim().to_lowercase(),
                         }
                     }
                 }
             }
         }
+
+        if let Some(id) = viewing() {
+            crate::mods_ui::ModDetailPanel {
+                mod_id: id,
+                sd_root: sd_root.clone(),
+                installed: installed_ids,
+                on_close: {
+                    let root = sd_root.clone();
+                    move |_| {
+                        viewing.set(None);
+                        // The panel can reinstall or uninstall; the list must reflect it.
+                        mods.set(install::scan_installed_mods(&root));
+                    }
+                },
+            }
+        }
+
         if show_starter() {
             div { class: "starter_overlay", onclick: move |_| show_starter.set(false),
                 div { class: "starter_panel", onclick: move |e| e.stop_propagation(),
@@ -270,7 +304,8 @@ fn InstalledRow(
     entry: InstalledMod,
     sd_root: PathBuf,
     mods: Signal<Vec<InstalledMod>>,
-    on_view: EventHandler<ModSource>,
+    // Called with the GameBanana mod id when the user wants the detail panel.
+    on_view: EventHandler<u64>,
     query: String,
 ) -> Element {
     // Uninstall is destructive, so the button asks for a second click to confirm.
@@ -311,17 +346,12 @@ fn InstalledRow(
                 }
             }
             div { class: "installed_row_actions",
-                // "View" opens the in-app browser detail. GameBanana always; Nexus only while its
-                // browser is enabled (otherwise the button would open nothing).
-                if matches!(entry.source, ModSource::GameBanana(_))
-                    || (matches!(entry.source, ModSource::Nexus(_)) && crate::mods_ui::NEXUS_ENABLED)
-                {
+                // "View" opens the GameBanana detail panel in place. (Nexus rows get no View:
+                // its browser is disabled, and there's no Nexus detail panel to host yet.)
+                if let ModSource::GameBanana(id) = entry.source {
                     button {
                         class: "ghost",
-                        onclick: {
-                            let src = entry.source.clone();
-                            move |_| on_view.call(src.clone())
-                        },
+                        onclick: move |_| on_view.call(id),
                         "View"
                     }
                 }

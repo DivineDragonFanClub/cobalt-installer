@@ -34,6 +34,9 @@ pub struct Image {
     pub file220: Option<String>,
     #[serde(rename = "_sFile530", default)]
     pub file530: Option<String>,
+    // The modder's note on this screenshot, shown under it in the lightbox.
+    #[serde(rename = "_sCaption", default)]
+    pub caption: Option<String>,
 }
 
 impl Image {
@@ -43,6 +46,10 @@ impl Image {
         format!("{}/{}", self.base_url, file)
     }
 
+    // The original upload, for the lightbox.
+    pub fn full_url(&self) -> String {
+        format!("{}/{}", self.base_url, self.file)
+    }
 }
 
 #[derive(Deserialize, Clone, PartialEq, Debug, Default)]

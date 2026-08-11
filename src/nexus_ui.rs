@@ -17,7 +17,7 @@ use crate::mods_ui::{SkeletonCard, Spinner};
 use crate::nexus::{self, Auth, NexusFile, NexusMod};
 
 #[component]
-pub fn NexusBrowser(sd_root: PathBuf, view_request: Signal<Option<crate::install::ModSource>>) -> Element {
+pub fn NexusBrowser(sd_root: PathBuf) -> Element {
     let mut apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
 
     // Validate the stored key (and re-validate if it changes). The outer Option is "still loading",
@@ -46,7 +46,7 @@ pub fn NexusBrowser(sd_root: PathBuf, view_request: Signal<Option<crate::install
                         }
                         button { class: "secondary", onclick: move |_| apikey.set(String::new()), "Sign out" }
                     }
-                    NexusList { sd_root: sd_root.clone(), apikey: apikey(), view_request }
+                    NexusList { sd_root: sd_root.clone(), apikey: apikey() }
                 },
                 Some(Some(Err(e))) => rsx! {
                     NexusSetup { apikey, error: Some(e.to_string()) }
@@ -99,32 +99,13 @@ fn NexusSetup(mut apikey: Signal<String>, error: Option<String>) -> Element {
 }
 
 #[component]
-fn NexusList(
-    sd_root: PathBuf,
-    apikey: String,
-    view_request: Signal<Option<crate::install::ModSource>>,
-) -> Element {
+fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
     // How many mods to pull per page from the GraphQL catalog.
     const PAGE: u32 = 20;
 
     let mut query = use_signal(String::new);
     let mut show_nsfw = use_signal(|| false);
     let mut selected = use_signal(|| None::<NexusMod>);
-
-    // Opened from My Mods "View": the Nexus detail overlay needs the full mod, not just an id, so we
-    // look it up with the signed-in key and then open it. Clear the request either way.
-    let view_key = apikey.clone();
-    use_effect(move || {
-        if let Some(crate::install::ModSource::Nexus(id)) = view_request() {
-            view_request.set(None);
-            let key = view_key.clone();
-            spawn(async move {
-                if let Ok(m) = nexus::mod_info(&Auth::ApiKey(key), id).await {
-                    selected.set(Some(m));
-                }
-            });
-        }
-    });
 
     // Results grow as the user hits "Load more". `total` is the full match count from Nexus.
     let mut results = use_signal(Vec::<NexusMod>::new);
@@ -314,7 +295,7 @@ fn NexusDetailPanel(
             div {
                 class: "mod_detail_panel",
                 onclick: move |e| e.stop_propagation(),
-                button { class: "close", onclick: move |_| on_close.call(()), "X" }
+                button { class: "close", onclick: move |_| on_close.call(()), {crate::icons::x(15)} }
 
                 div { class: "mod_detail_head",
                     div {

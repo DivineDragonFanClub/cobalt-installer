@@ -94,6 +94,15 @@ pub fn x(size: u32) -> Element {
     })
 }
 
+// Three lines, for the list-tools menu next to the sort select.
+pub fn hamburger(size: u32) -> Element {
+    stroke(size, rsx! {
+        path { d: "M4 6h16" }
+        path { d: "M4 12h16" }
+        path { d: "M4 18h16" }
+    })
+}
+
 // Three dots, for the row overflow menu (a text ⋯ never sits optically centered).
 pub fn dots(size: u32) -> Element {
     rsx! {

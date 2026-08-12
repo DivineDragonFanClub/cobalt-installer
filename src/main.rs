@@ -645,9 +645,8 @@ fn App() -> Element {
                  .tt_day {{ background-image: url(\"{ICON_DAY}\"); }}\n\
                  .tt_night {{ background-image: url(\"{ICON_NIGHT}\"); }}\n\
                  .tt_evening {{ background-image: url(\"{ICON_EVENING}\"); }}\n\
-                         .gb_link::before, .installed_name_link::after {{ content: \"\"; display: inline-block; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
-                         .gb_link::before {{ width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; }}\n\
-                         .installed_name_link::after {{ width: 13px; height: 13px; }}\n\
+                         .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                         .src_mark.gb {{ background-image: url(\"{ICON_GAMEBANANA}\"); image-rendering: pixelated; width: 13px; height: 13px; }}\n\
                          .src_mark.fortune {{ background-image: url(\"{ICON_FORTUNE}\"); }}\n\
                          .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}",
                 )

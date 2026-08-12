@@ -40,7 +40,7 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
     });
 
     let refresh_root = sd_root.clone();
-    let refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
+    let mut refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
 
     // Open the whole mods folder in the OS file browser.
     let open_root = sd_root.clone();
@@ -48,6 +48,9 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         let mods_dir = open_root.join("engage").join("mods");
         let _ = crate::open_dir(mods_dir);
     };
+
+    // The hamburger next to the sort select, holding the list-level tools.
+    let mut tools_open = use_signal(|| false);
 
     // Case-insensitive filter over name + folder slug + author + description
     // (author comes from the mod's config.yaml, which the scanner already
@@ -81,35 +84,29 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
 
     rsx! {
         div { id: "my_mods",
-            div { class: "my_mods_head",
-                div { class: "my_mods_title",
-                    h2 { "Installed mods" }
-                    span { class: "count",
+            // No page title: the mod count lives in the search placeholder, and the
+            // match count surfaces inside the input while a query is active.
+            div { class: "mod_search_bar",
+                div { class: "search_wrap",
+                    input {
+                        r#type: "text",
+                        placeholder: "Search name, author or description…",
+                        // mod names are codes and slugs — keep the OS text helpers out
+                        autocomplete: "off",
+                        autocapitalize: "off",
+                        spellcheck: "false",
+                        "autocorrect": "off",
+                        value: "{query}",
+                        oninput: move |e| query.set(e.value()),
+                    }
+                    // Idle: the library size. Filtering: how much of it matches.
+                    span { class: "search_count",
                         if query().trim().is_empty() {
-                            "{mods().len()} installed"
+                            "{mods().len()} mods installed"
                         } else {
                             "{filtered().len()} of {mods().len()}"
                         }
                     }
-                }
-                div { class: "my_mods_actions",
-                    button { class: "ghost", onclick: open_mods_folder, "Open folder" }
-                    button { class: "ghost", onclick: refresh, "Refresh" }
-                }
-            }
-
-            // Same bar layout as the Browse view: search stretches, sort trails.
-            div { class: "mod_search_bar",
-                input {
-                    r#type: "text",
-                    placeholder: "Search name, author or description…",
-                    // mod names are codes and slugs — keep the OS text helpers out
-                    autocomplete: "off",
-                    autocapitalize: "off",
-                    spellcheck: "false",
-                    "autocorrect": "off",
-                    value: "{query}",
-                    oninput: move |e| query.set(e.value()),
                 }
                 select {
                     class: "category_select",
@@ -120,6 +117,36 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                     option { value: "oldest", "Oldest first" }
                     option { value: "large", "Largest first" }
                     option { value: "small", "Smallest first" }
+                }
+                // List-level tools live behind the hamburger, same popover as the rows'.
+                div { class: "row_menu_anchor",
+                    button {
+                        class: "ghost kebab",
+                        title: "List tools",
+                        onclick: move |_| tools_open.set(!tools_open()),
+                        {crate::icons::hamburger(16)}
+                    }
+                    if tools_open() {
+                        div { class: "menu_backdrop", onclick: move |_| tools_open.set(false) }
+                        div { class: "row_menu",
+                            button {
+                                class: "menu_item",
+                                onclick: move |e| {
+                                    tools_open.set(false);
+                                    open_mods_folder(e);
+                                },
+                                "Open folder"
+                            }
+                            button {
+                                class: "menu_item",
+                                onclick: move |e| {
+                                    tools_open.set(false);
+                                    refresh(e);
+                                },
+                                "Refresh"
+                            }
+                        }
+                    }
                 }
             }
 
@@ -362,17 +389,20 @@ fn InstalledRow(
                     // A GameBanana mod's whole title links to its page, with the banana mark
                     // riding tight after the text; other sources keep the plain name + chip.
                     if let ModSource::GameBanana(gb_id) = entry.source {
-                        a {
-                            class: "installed_name_link",
-                            href: "https://gamebanana.com/mods/{gb_id}",
+                        // Clicking the title opens the in-app detail panel (the old View);
+                        // the ⋯ menu holds the link out to the GameBanana site.
+                        span {
+                            class: "installed_name_group gb",
                             onmouseenter: move |_| show_delay.action(()),
                             onmouseleave: move |_| {
                                 show_delay.cancel();
                                 show_origin.set(false);
                             },
+                            onclick: move |_| on_view.call(gb_id),
                             span { class: "installed_name", {highlight(&entry.name, &query)} }
+                            span { class: "src_mark gb" }
                             if show_origin() {
-                                span { class: "origin_tip", "Open on GameBanana" }
+                                span { class: "origin_tip", "View mod details" }
                             }
                         }
                     } else if matches!(entry.source, ModSource::Manual) {
@@ -442,15 +472,13 @@ fn InstalledRow(
                             },
                         }
                         div { class: "row_menu",
-                            // Opens the in-app GameBanana detail panel, like the old View button.
+                            // Out to the mod's page on the GameBanana site.
                             if let ModSource::GameBanana(id) = entry.source {
-                                button {
+                                a {
                                     class: "menu_item",
-                                    onclick: move |_| {
-                                        menu_open.set(false);
-                                        on_view.call(id);
-                                    },
-                                    "See on GameBanana"
+                                    href: "https://gamebanana.com/mods/{id}",
+                                    onclick: move |_| menu_open.set(false),
+                                    "Open on GameBanana"
                                 }
                             }
                             button { class: "menu_item", onclick: reveal, "{reveal_label}" }

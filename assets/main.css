@@ -949,6 +949,11 @@ a.installed_name_link:hover .installed_name {
     color: light-dark(#8a5e10, #f4c56b);
     transition: color 0.12s;
 }
+/* GB titles keep the banana-gold hover tint */
+.installed_name_group.gb:hover .installed_name {
+    color: light-dark(#8a5e10, #f4c56b);
+    transition: color 0.12s;
+}
 /* manual rows share the rhythm, tinted to their fortune card's blue; it hovers
    like a link even though clicking only summons the origin note */
 .installed_name_group {
@@ -985,6 +990,34 @@ a.installed_name_link:hover .installed_name {
 .row_menu_anchor {
     position: relative;
 }
+/* the search bar's hamburger lines up with the rows' ⋯ column: row cards inset
+   their kebab 16px, the bar doesn't, so the anchor carries the difference */
+.mod_search_bar .row_menu_anchor {
+    margin-right: 16px;
+}
+/* the search input plus its live match-count readout */
+.search_wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+}
+.search_wrap input[type="text"] {
+    width: 100%;
+    /* room for the "49 mods installed" readout so text never runs under it */
+    padding-right: 140px;
+}
+.search_count {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--faint);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 /* boxless: just the dots, with a soft pad appearing on hover. Doubled-up class
    so this outranks the ghost plaque rules that come later in the file. */
 button.ghost.kebab {
@@ -1024,7 +1057,10 @@ button.ghost.kebab:hover:enabled {
     border-radius: 6px;
     box-shadow: var(--shadow);
 }
-button.menu_item {
+.row_menu .menu_item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     text-align: left;
     padding: 7px 10px;
     border: none;
@@ -1035,18 +1071,19 @@ button.menu_item {
     color: var(--text);
     transition: background-color 0.12s;
 }
-button.menu_item:hover:enabled {
+.row_menu .menu_item:hover {
     background: var(--surface-2);
     border: none;
+    text-decoration: none;
 }
-button.menu_item.danger_item {
+.row_menu .menu_item.danger_item {
     color: var(--danger);
 }
-button.menu_item.danger_item:hover:enabled {
+.row_menu .menu_item.danger_item:hover {
     background: var(--danger-dim);
 }
 /* the armed state Delete flips into before the destructive click */
-button.menu_item.danger_item.armed {
+.row_menu .menu_item.danger_item.armed {
     background: var(--danger-dim);
     font-weight: 600;
 }

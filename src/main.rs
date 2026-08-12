@@ -25,6 +25,8 @@ const ICON_INSTALL: Asset = asset!("/assets/icon_forge.png");
 const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
 const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 const ICON_SOLA: Asset = asset!("/assets/icon_sola_cave.png");
+// Fortune Telling card, marking manually-installed mods in My Mods.
+const ICON_FORTUNE: Asset = asset!("/assets/icon_fortune.png");
 // Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
 // before the "Open on GameBanana" link in the mod detail overlay.
 const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
@@ -451,6 +453,26 @@ pub(crate) fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     Command::new(cmd).arg(path.as_ref()).spawn()
 }
 
+// Reveal (select) a file or folder in the OS file browser rather than opening it.
+pub(crate) fn reveal_in_file_browser(path: impl AsRef<Path>) -> std::io::Result<Child> {
+    match std::env::consts::OS {
+        "macos" => Command::new("open").arg("-R").arg(path.as_ref()).spawn(),
+        "windows" => {
+            // explorer wants the switch and path as one argument: /select,C:\...
+            let mut arg = std::ffi::OsString::from("/select,");
+            arg.push(path.as_ref());
+            Command::new("explorer").arg(arg).spawn()
+        }
+        _ => {
+            // No portable "reveal" on Linux; opening the parent folder is the usual stand-in.
+            let parent = path.as_ref().parent().map(Path::to_path_buf);
+            Command::new("xdg-open")
+                .arg(parent.unwrap_or_else(|| path.as_ref().to_path_buf()))
+                .spawn()
+        }
+    }
+}
+
 
 #[cfg(feature = "desktop")]
 fn construct_bad_subsdk9_path(emulator: &Emulator) -> Option<PathBuf> {
@@ -623,7 +645,10 @@ fn App() -> Element {
                  .tt_day {{ background-image: url(\"{ICON_DAY}\"); }}\n\
                  .tt_night {{ background-image: url(\"{ICON_NIGHT}\"); }}\n\
                  .tt_evening {{ background-image: url(\"{ICON_EVENING}\"); }}\n\
-                         .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                         .gb_link::before, .installed_name_link::after {{ content: \"\"; display: inline-block; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                         .gb_link::before {{ width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; }}\n\
+                         .installed_name_link::after {{ width: 13px; height: 13px; }}\n\
+                         .src_mark.fortune {{ background-image: url(\"{ICON_FORTUNE}\"); }}\n\
                          .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}",
                 )
             }

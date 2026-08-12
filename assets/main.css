@@ -923,6 +923,133 @@ input:focus {
     color: var(--warn);
     border: 1px solid light-dark(#e4d38b, #6b5e1e);
 }
+/* small source marks that ride beside the title (image injected from main.rs) */
+.src_mark {
+    display: inline-block;
+    width: 15px;
+    height: 14px;
+    background: no-repeat center / contain;
+    flex-shrink: 0;
+}
+
+/* a GameBanana mod's title is the link to its page, banana riding after the text;
+   manual mods use the same title-plus-mark shape (fortune card), just unlinked */
+a.installed_name_link,
+.installed_name_group {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+}
+a.installed_name_link:hover {
+    text-decoration: none;
+}
+a.installed_name_link:hover .installed_name {
+    color: light-dark(#8a5e10, #f4c56b);
+    transition: color 0.12s;
+}
+/* manual rows share the rhythm, tinted to their fortune card's blue; it hovers
+   like a link even though clicking only summons the origin note */
+.installed_name_group {
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    /* the fortune card's circular badge carries its own inner padding, so the
+       geometric gap must be smaller than the banana's to LOOK the same */
+    gap: 3px;
+}
+.installed_name_group:hover .installed_name {
+    color: light-dark(#2a6fa8, #8fd0f5);
+    transition: color 0.12s;
+}
+/* the click-summoned origin note */
+.origin_tip {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 0;
+    z-index: 60;
+    white-space: nowrap;
+    padding: 6px 11px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+/* ---- Row ⋯ menu ------------------------------------------------------------ */
+.row_menu_anchor {
+    position: relative;
+}
+/* boxless: just the dots, with a soft pad appearing on hover. Doubled-up class
+   so this outranks the ghost plaque rules that come later in the file. */
+button.ghost.kebab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 35px;
+    padding: 0;
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+}
+button.ghost.kebab:hover:enabled {
+    background: var(--surface-3);
+    border-color: transparent;
+    color: var(--text);
+}
+.menu_backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+}
+.row_menu {
+    /* overlaps its ⋯ trigger (the native-menu pattern) rather than dropping below it */
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    z-index: 60;
+    min-width: 178px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+}
+button.menu_item {
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    transition: background-color 0.12s;
+}
+button.menu_item:hover:enabled {
+    background: var(--surface-2);
+    border: none;
+}
+button.menu_item.danger_item {
+    color: var(--danger);
+}
+button.menu_item.danger_item:hover:enabled {
+    background: var(--danger-dim);
+}
+/* the armed state Delete flips into before the destructive click */
+button.menu_item.danger_item.armed {
+    background: var(--danger-dim);
+    font-weight: 600;
+}
 .premium_badge {
     background: light-dark(#f5e8c6, #4a3a10);
     color: light-dark(#8a5e10, #f4c56b);
@@ -1988,9 +2115,10 @@ button.lb_dot.on {
     display: flex;
     gap: 8px;
     flex-shrink: 0;
-    /* keep the buttons vertically centered against the first line of text */
+    /* center the ⋯ against the title line: the button is taller than the text
+       line, so it pulls up to put its dots on the title's midline */
     align-items: center;
-    padding-top: 2px;
+    margin-top: -7px;
 }
 
 /* Live install rows (a download in progress), shown above the installed list. */

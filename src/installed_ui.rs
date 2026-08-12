@@ -135,8 +135,14 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                 div { class: "empty_state",
                     div { class: "empty_icon", {crate::icons::package(40)} }
                     div { class: "empty_title", "No mods installed yet" }
-                    div { class: "empty_sub", "Grab a starter pack of hand-picked mods, or head to Browse to find your own." }
-                    button { class: "engage", onclick: move |_| show_starter.set(true), "Browse the starter pack" }
+                    div { class: "empty_sub",
+                        "Grab a starter pack of hand-picked mods, or head to Browse to find your own."
+                    }
+                    button {
+                        class: "engage",
+                        onclick: move |_| show_starter.set(true),
+                        "Browse the starter pack"
+                    }
                 }
             } else if !mods().is_empty() && filtered().is_empty() {
                 div { class: "mod_message", "No installed mods match your search." }
@@ -180,9 +186,17 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         }
 
         if show_starter() {
-            div { class: "starter_overlay", onclick: move |_| show_starter.set(false),
-                div { class: "starter_panel", onclick: move |e| e.stop_propagation(),
-                    button { class: "close", onclick: move |_| show_starter.set(false), "X" }
+            div {
+                class: "starter_overlay",
+                onclick: move |_| show_starter.set(false),
+                div {
+                    class: "starter_panel",
+                    onclick: move |e| e.stop_propagation(),
+                    button {
+                        class: "close",
+                        onclick: move |_| show_starter.set(false),
+                        "X"
+                    }
                     crate::starter_ui::StarterPack {
                         sd_root: sd_root.clone(),
                         on_close: {
@@ -279,7 +293,7 @@ fn highlight(text: &str, q: &str) -> Element {
         segs.push((text[pos..].to_string(), false));
     }
     rsx! {
-        for (seg, hit) in segs {
+        for (seg , hit) in segs {
             if hit {
                 mark { "{seg}" }
             } else {
@@ -310,14 +324,34 @@ fn InstalledRow(
 ) -> Element {
     // Uninstall is destructive, so the button asks for a second click to confirm.
     let mut confirming = use_signal(|| false);
+    // The ⋯ menu holding the row's secondary actions.
+    let mut menu_open = use_signal(|| false);
+    // The title bubble: hover shows it after a beat (tooltip-style, not instant),
+    // leaving hides and cancels a pending show, and on manual rows a click shows it
+    // immediately and pins it for 1.8s.
+    let mut show_origin = use_signal(|| false);
+    let mut show_delay = dioxus_sdk::time::use_debounce(
+        std::time::Duration::from_millis(450),
+        move |_| show_origin.set(true),
+    );
+    let mut hide_origin = dioxus_sdk::time::use_debounce(
+        std::time::Duration::from_millis(1800),
+        move |_| show_origin.set(false),
+    );
     let (chip_label, chip_class) = source_chip(&entry.source);
 
-    let do_uninstall = {
+    let reveal_label = if cfg!(target_os = "macos") {
+        "Show in Finder"
+    } else if cfg!(target_os = "windows") {
+        "Show in Explorer"
+    } else {
+        "Show in file manager"
+    };
+    let reveal = {
         let path = entry.path.clone();
-        let root = sd_root.clone();
         move |_| {
-            install::remove_installed_mod(&path);
-            mods.set(install::scan_installed_mods(&root));
+            menu_open.set(false);
+            let _ = crate::reveal_in_file_browser(&path);
         }
     };
 
@@ -325,17 +359,62 @@ fn InstalledRow(
         div { class: "installed_row",
             div { class: "installed_info",
                 div { class: "installed_name_line",
-                    span { class: "installed_name", {highlight(&entry.name, &query)} }
-                    span { class: chip_class, "{chip_label}" }
-                    if !entry.has_config {
-                        span { class: "chip warn", "No config" }
+                    // A GameBanana mod's whole title links to its page, with the banana mark
+                    // riding tight after the text; other sources keep the plain name + chip.
+                    if let ModSource::GameBanana(gb_id) = entry.source {
+                        a {
+                            class: "installed_name_link",
+                            href: "https://gamebanana.com/mods/{gb_id}",
+                            onmouseenter: move |_| show_delay.action(()),
+                            onmouseleave: move |_| {
+                                show_delay.cancel();
+                                show_origin.set(false);
+                            },
+                            span { class: "installed_name", {highlight(&entry.name, &query)} }
+                            if show_origin() {
+                                span { class: "origin_tip", "Open on GameBanana" }
+                            }
+                        }
+                    } else if matches!(entry.source, ModSource::Manual) {
+                        // The Fortune Telling card: origin unknown, the user put it here. Same
+                        // shape and bubble as the GameBanana title link; hover shows it, and a
+                        // click pins it for a beat (useful mid-scroll and on touchpads).
+                        span {
+                            class: "installed_name_group",
+                            onmouseenter: move |_| show_delay.action(()),
+                            onmouseleave: move |_| {
+                                show_delay.cancel();
+                                show_origin.set(false);
+                            },
+                            onclick: move |_| {
+                                show_delay.cancel();
+                                show_origin.set(true);
+                                hide_origin.action(());
+                            },
+                            span { class: "installed_name", {highlight(&entry.name, &query)} }
+                            span { class: "src_mark fortune" }
+                            if show_origin() {
+                                span { class: "origin_tip", "You installed this mod manually." }
+                            }
+                        }
+                    } else {
+                        span { class: "installed_name", {highlight(&entry.name, &query)} }
+                        span { class: chip_class, "{chip_label}" }
                     }
                 }
                 div { class: "installed_meta",
-                    if let Some(author) = entry.author.clone() {
+                    // A missing config takes the byline's place as plain text, not a chip.
+                    if !entry.has_config {
+                        "Mod has no config file"
+                        if entry.size_bytes > 0 {
+                            " · "
+                        }
+                    } else if let Some(author) = entry.author.clone() {
                         "by "
                         {highlight(&author, &query)}
-                        if entry.size_bytes > 0 { " · " }
+                        if entry.size_bytes > 0 {
+                            " · "
+                        }
                     }
                     if entry.size_bytes > 0 {
                         "{crate::gamebanana::format_filesize(entry.size_bytes)}"
@@ -346,20 +425,61 @@ fn InstalledRow(
                 }
             }
             div { class: "installed_row_actions",
-                // "View" opens the GameBanana detail panel in place. (Nexus rows get no View:
-                // its browser is disabled, and there's no Nexus detail panel to host yet.)
-                if let ModSource::GameBanana(id) = entry.source {
+                div { class: "row_menu_anchor",
                     button {
-                        class: "ghost",
-                        onclick: move |_| on_view.call(id),
-                        "View"
+                        class: "ghost kebab",
+                        title: "More actions",
+                        onclick: move |_| menu_open.set(!menu_open()),
+                        {crate::icons::dots(16)}
                     }
-                }
-                if confirming() {
-                    button { class: "danger", onclick: do_uninstall, "Confirm remove" }
-                    button { class: "ghost", onclick: move |_| confirming.set(false), "Cancel" }
-                } else {
-                    button { class: "danger_outline", onclick: move |_| confirming.set(true), "Uninstall" }
+                    if menu_open() {
+                        // Invisible click-catcher: any click outside the menu closes it.
+                        div {
+                            class: "menu_backdrop",
+                            onclick: move |_| {
+                                menu_open.set(false);
+                                confirming.set(false);
+                            },
+                        }
+                        div { class: "row_menu",
+                            // Opens the in-app GameBanana detail panel, like the old View button.
+                            if let ModSource::GameBanana(id) = entry.source {
+                                button {
+                                    class: "menu_item",
+                                    onclick: move |_| {
+                                        menu_open.set(false);
+                                        on_view.call(id);
+                                    },
+                                    "See on GameBanana"
+                                }
+                            }
+                            button { class: "menu_item", onclick: reveal, "{reveal_label}" }
+                            // Delete confirms in place: the same row re-arms as "Confirm delete",
+                            // so nothing jumps under the cursor. Clicking outside disarms.
+                            if confirming() {
+                                button {
+                                    class: "menu_item danger_item armed",
+                                    onclick: {
+                                        let path = entry.path.clone();
+                                        let root = sd_root.clone();
+                                        move |_| {
+                                            menu_open.set(false);
+                                            confirming.set(false);
+                                            install::remove_installed_mod(&path);
+                                            mods.set(install::scan_installed_mods(&root));
+                                        }
+                                    },
+                                    "Confirm delete"
+                                }
+                            } else {
+                                button {
+                                    class: "menu_item danger_item",
+                                    onclick: move |_| confirming.set(true),
+                                    "Delete"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

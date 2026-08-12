@@ -1565,6 +1565,23 @@ input:focus {
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
 }
+/* the standard close chip, in black-glass clothes, pinned to the overlay's corner */
+.lightbox_overlay button.lb_close {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    width: 34px;
+    height: 34px;
+    background: rgba(20, 24, 31, 0.6);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #e8ebf1;
+    z-index: 5;
+}
+.lightbox_overlay button.lb_close:hover:enabled {
+    background: rgba(42, 50, 64, 0.85);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
 /* caption + counter hang below the image out of layout flow, so the image sits
    dead-center whether they exist or not */
 .lb_meta {
@@ -1586,12 +1603,35 @@ input:focus {
     line-height: 1.5;
     text-align: center;
 }
-.lb_count {
-    color: rgba(232, 235, 241, 0.55);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
+/* slide dots: one per screenshot, the current one lit; clickable to jump */
+.lb_dots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 3px 0;
+    pointer-events: auto;
+}
+button.lb_dot {
+    width: 9px;
+    height: 9px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.32);
+    transition: background-color 0.2s;
+}
+button.lb_dot:hover {
+    background: rgba(255, 255, 255, 0.6);
+}
+button.lb_dot.on {
+    background: #fff;
 }
 .lightbox_overlay button.lb_nav {
+    /* pinned to the overlay's edges, so they never move with the image's size */
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
     width: 44px;
     height: 44px;
     padding: 0;
@@ -1603,6 +1643,21 @@ input:focus {
     line-height: 1;
     flex-shrink: 0;
     transition: background-color 0.2s;
+    z-index: 5;
+}
+/* Anchored just outside where a full-size 16:9 slide's edges land (images are
+   height-capped, so that width is a constant of the window, not of the slide) —
+   close to the picture, but never moving between slides. The clamp keeps them
+   on-screen when the window gets small. */
+.lightbox_overlay {
+    --lb-reach: calc((100vh - 190px) * 8 / 9 + 16px);
+}
+.lightbox_overlay button.lb_prev {
+    right: clamp(50%, calc(50% + var(--lb-reach)), calc(100% - 68px));
+    left: auto;
+}
+.lightbox_overlay button.lb_next {
+    left: clamp(50%, calc(50% + var(--lb-reach)), calc(100% - 68px));
 }
 .lightbox_overlay button.lb_nav:hover {
     background: rgba(255, 255, 255, 0.18);

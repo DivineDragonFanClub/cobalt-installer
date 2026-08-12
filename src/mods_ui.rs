@@ -573,9 +573,17 @@ pub(crate) fn ModDetailContent(
                 let caption = img.caption.clone().unwrap_or_default();
                 rsx! {
                     div { class: "lightbox_overlay", onclick: move |_| lightbox.set(None),
+                        button {
+                            class: "close lb_close",
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                lightbox.set(None);
+                            },
+                            {crate::icons::x(16)}
+                        }
                         if n > 1 {
                             button {
-                                class: "lb_nav",
+                                class: "lb_nav lb_prev",
                                 onclick: move |e| {
                                     e.stop_propagation();
                                     lightbox.set(Some((i + n - 1) % n));
@@ -593,14 +601,26 @@ pub(crate) fn ModDetailContent(
                                         div { class: "lb_caption", "{caption}" }
                                     }
                                     if n > 1 {
-                                        div { class: "lb_count", "{i + 1} / {n}" }
+                                        div { class: "lb_dots",
+                                            for d in 0..n {
+                                                button {
+                                                    key: "{d}",
+                                                    class: if d == i { "lb_dot on" } else { "lb_dot" },
+                                                    title: "Screenshot {d + 1} of {n}",
+                                                    onclick: move |e| {
+                                                        e.stop_propagation();
+                                                        lightbox.set(Some(d));
+                                                    },
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                         if n > 1 {
                             button {
-                                class: "lb_nav",
+                                class: "lb_nav lb_next",
                                 onclick: move |e| {
                                     e.stop_propagation();
                                     lightbox.set(Some((i + 1) % n));

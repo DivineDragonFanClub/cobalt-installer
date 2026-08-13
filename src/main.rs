@@ -822,6 +822,14 @@ fn Body(status_message: Signal<String>) -> Element {
     // here because Body is always mounted; it reads the two target signals per request, so it
     // follows the user's install-target choice without any state of its own.
     installed_ui::use_thumb_protocol(installation_type, user_selected_sdcard_path);
+    // Sample the webview's timezone once so gamebanana::format_date prints local calendar days
+    // (an evening install formatted in UTC reads as tomorrow's date).
+    use_future(|| async {
+        let mut offset = document::eval("dioxus.send(new Date().getTimezoneOffset());");
+        if let Ok(minutes) = offset.recv::<i32>().await {
+            gamebanana::set_local_offset_minutes(minutes);
+        }
+    });
     let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
     // First run walks the user through picking their device and confirming Cobalt is there. Once
     // done we remember it and go straight to the main app on later launches.

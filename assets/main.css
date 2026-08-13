@@ -92,8 +92,14 @@ html.modal_open {
     overflow-y: hidden;
 }
 html.modal_open body {
-    /* set at lock time to the measured scrollbar width — 11px for our classic bars,
-       0 when macOS gives the webview overlay scrollbars */
+    /* Pinning the body is what actually freezes the page: this webview keeps wheel-scrolling
+       the document under overflow-y: hidden alone. The inline top (set at lock time) parks the
+       page at its pre-lock offset, and the unlock eval restores the scroll position. The
+       margin is the measured scrollbar width — 11px for our classic bars, 0 when macOS hands
+       the webview overlay scrollbars. */
+    position: fixed;
+    left: 0;
+    right: 0;
     margin-right: var(--scroll-gutter, 0px);
 }
 

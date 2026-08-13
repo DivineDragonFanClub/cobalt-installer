@@ -362,6 +362,8 @@ pub(crate) fn ModDetailPanel(
             // 11px, but macOS may hand the webview zero-width overlay scrollbars instead.
             "const gutter = window.innerWidth - document.documentElement.clientWidth;\n\
              document.documentElement.style.setProperty('--scroll-gutter', gutter + 'px');\n\
+             window.__lock_scroll_y = window.scrollY;\n\
+             document.body.style.top = -window.scrollY + 'px';\n\
              document.documentElement.classList.add('modal_open');\n\
              window.__esc_close = (e) => {\n\
                  if (!['Escape', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;\n\
@@ -406,6 +408,9 @@ pub(crate) fn ModDetailPanel(
     use_drop(|| {
         document::eval(
             "document.documentElement.classList.remove('modal_open');\n\
+             document.body.style.top = '';\n\
+             window.scrollTo(0, window.__lock_scroll_y || 0);\n\
+             delete window.__lock_scroll_y;\n\
              document.removeEventListener('keydown', window.__esc_close);\n\
              delete window.__esc_close;",
         );

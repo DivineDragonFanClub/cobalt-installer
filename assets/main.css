@@ -2153,6 +2153,29 @@ button.lb_dot.on {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.installed_desc.expanded {
+    display: block;
+    -webkit-line-clamp: none;
+}
+/* The Show more/less toggle under a clamped description: bare link-like text, no plaque.
+   Doubled class beats the global button hover/press rules, same trick as .ghost.kebab. */
+button.ghost.desc_toggle {
+    display: block;
+    padding: 0;
+    margin-top: 3px;
+    background: transparent;
+    border-color: transparent;
+    font-size: 12px;
+    color: var(--faint);
+}
+button.ghost.desc_toggle:hover:enabled {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text);
+}
+button.ghost.desc_toggle:active:enabled {
+    transform: none; /* same no-nudge rule as the ⋯/hamburger glyphs */
+}
 .installed_row_actions {
     display: flex;
     gap: 8px;
@@ -2196,10 +2219,12 @@ button.lb_dot.on {
     border-radius: 6px;
     overflow: hidden;
     background: var(--bg);
-    /* Rows vary in height (one-liners up to clamped descriptions); the fixed 16:9 card rides
-       the vertical middle so short and tall rows both read balanced. Stretching to row height
-       was tried and rejected: placeholder rows became heavy dark slabs. */
-    align-self: center;
+    /* Top-anchored with a small optical inset: a Show more expansion then grows the row
+       downward under the art instead of re-centering it (centered was tried — the tile slid
+       on every toggle). Stretch-to-row-height was also tried and rejected: placeholder rows
+       became heavy dark slabs. */
+    align-self: flex-start;
+    margin-top: 3px;
 }
 .installed_thumb img {
     width: 100%;

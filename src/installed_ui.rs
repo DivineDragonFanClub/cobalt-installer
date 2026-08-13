@@ -402,6 +402,8 @@ fn InstalledRow(
     let mut confirming = use_signal(|| false);
     // The ⋯ menu holding the row's secondary actions.
     let mut menu_open = use_signal(|| false);
+    // A long config description expands in place rather than staying clamped forever.
+    let mut desc_open = use_signal(|| false);
     // The title bubble: hover shows it after a beat (tooltip-style, not instant),
     // leaving hides and cancels a pending show, and on manual rows a click shows it
     // immediately and pins it for 1.8s.
@@ -509,7 +511,20 @@ fn InstalledRow(
                     }
                 }
                 if let Some(desc) = entry.description.clone() {
-                    p { class: "installed_desc", {highlight(&desc, &query)} }
+                    p {
+                        class: if desc_open() { "installed_desc expanded" } else { "installed_desc" },
+                        {highlight(&desc, &query)}
+                    }
+                    // Only descriptions that can plausibly overflow the 2-line clamp get the
+                    // toggle. Length is a heuristic, not a measurement: at very wide windows a
+                    // borderline text may expand to reveal little. One constant, tuned by eye.
+                    if desc.chars().count() > 160 || desc.contains('\n') {
+                        button {
+                            class: "ghost desc_toggle",
+                            onclick: move |_| desc_open.set(!desc_open()),
+                            if desc_open() { "Show less" } else { "Show more" }
+                        }
+                    }
                 }
             }
             div { class: "installed_row_actions",

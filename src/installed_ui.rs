@@ -416,13 +416,7 @@ fn InstalledRow(
     );
     let (chip_label, chip_class) = source_chip(&entry.source);
 
-    let reveal_label = if cfg!(target_os = "macos") {
-        "Show in Finder"
-    } else if cfg!(target_os = "windows") {
-        "Show in Explorer"
-    } else {
-        "Show in file manager"
-    };
+    let reveal_label = crate::reveal_label();
     let reveal = {
         let path = entry.path.clone();
         move |_| {

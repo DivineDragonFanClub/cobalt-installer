@@ -1036,6 +1036,11 @@ button.ghost.kebab:hover:enabled {
     border-color: transparent;
     color: var(--text);
 }
+/* No pressed nudge on the ⋯/hamburger glyphs: the popover opens on top of the trigger, so the
+   global 1px translate reads as a flicker under it. The menu appearing is the click feedback. */
+button.ghost.kebab:active:enabled {
+    transform: none;
+}
 .menu_backdrop {
     position: fixed;
     inset: 0;

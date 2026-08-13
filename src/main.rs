@@ -453,6 +453,18 @@ pub(crate) fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     Command::new(cmd).arg(path.as_ref()).spawn()
 }
 
+// The menu label that goes with reveal_in_file_browser, in the OS's own vocabulary.
+#[cfg(feature = "desktop")]
+pub(crate) fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Show in Finder"
+    } else if cfg!(target_os = "windows") {
+        "Show in Explorer"
+    } else {
+        "Show in file manager"
+    }
+}
+
 // Reveal (select) a file or folder in the OS file browser rather than opening it.
 pub(crate) fn reveal_in_file_browser(path: impl AsRef<Path>) -> std::io::Result<Child> {
     match std::env::consts::OS {

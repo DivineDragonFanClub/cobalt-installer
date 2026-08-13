@@ -174,13 +174,14 @@ pub struct InstalledMod {
     // The config's description, if it has one.
     pub description: Option<String>,
     pub source: ModSource,
-    // Total size on disk (folder contents, or the .zip file's size).
-    pub size_bytes: u64,
     // When the mod landed in the folder: creation time where the filesystem
     // has one (macOS/Windows), else mtime. None if the metadata call fails.
     pub installed_at: Option<std::time::SystemTime>,
     // Whether the mod carries a config.yaml at all. Hand-dropped mods often don't.
     pub has_config: bool,
+    // File name of the preview image saved at install time ("thumbnail.jpg"), when the folder has
+    // one. Feeds the row art through the mod_thumb protocol. Zip mods have nowhere to keep one.
+    pub thumb: Option<String>,
     // Full path to the mod folder (or .zip), for opening in the file browser and uninstalling.
     pub path: PathBuf,
 }
@@ -284,15 +285,19 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             None => (folder.clone(), None, None, ModSource::Manual),
         };
 
-        let size_bytes = if is_dir {
-            dir_size(&path)
-        } else {
-            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
-        };
-
         let installed_at = std::fs::metadata(&path)
             .ok()
             .and_then(|md| md.created().or_else(|_| md.modified()).ok());
+
+        // The preview image saved at install time, if any.
+        let thumb = is_dir
+            .then(|| {
+                THUMB_EXTS
+                    .iter()
+                    .map(|e| format!("thumbnail.{e}"))
+                    .find(|n| path.join(n).is_file())
+            })
+            .flatten();
 
         mods.push(InstalledMod {
             folder,
@@ -300,31 +305,14 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             author,
             description,
             source,
-            size_bytes,
             installed_at,
             has_config: config.is_some(),
+            thumb,
             path,
         });
     }
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     mods
-}
-
-// Total size of everything under a folder, walked recursively.
-fn dir_size(path: &Path) -> u64 {
-    let mut total = 0;
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return 0;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            total += dir_size(&p);
-        } else if let Ok(meta) = entry.metadata() {
-            total += meta.len();
-        }
-    }
-    total
 }
 
 // Delete an installed mod by its path (a folder or a .zip). Returns whether it was removed.
@@ -495,10 +483,44 @@ fn ensure_nexus_source(dest: &Path, meta: &NexusMeta) {
     }
 }
 
+// Preview-image extensions we save and serve, in probe order. The webview renders all of these
+// natively, so a download keeps its original bytes instead of pulling in an image-conversion crate.
+pub(crate) const THUMB_EXTS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "gif"];
+
+// Save a mod's preview image as thumbnail.<ext> in its install folder. Best-effort by design, like
+// the config stamping above: nothing in the thumbnail path may ever fail an install (an Err would
+// roll back the whole batch in install_transactional, over a decoration). Leftovers under another
+// extension are cleared first so a re-install that changes format can't leave two behind.
+pub fn write_thumbnail(dest: &Path, bytes: &[u8], ext: &str) {
+    let ext = if THUMB_EXTS.contains(&ext) { ext } else { "jpg" };
+    for e in THUMB_EXTS {
+        if e != ext {
+            let _ = std::fs::remove_file(dest.join(format!("thumbnail.{e}")));
+        }
+    }
+    let _ = std::fs::write(dest.join(format!("thumbnail.{ext}")), bytes);
+}
+
+// Resolve a webview /mod_thumb request to a real file, or None. `folder` and `file` arrive
+// percent-decoded from the URL. The checks make traversal unreachable: folder must be a plain
+// single path component and file exactly thumbnail.<known ext>, so the handler can never serve
+// config.yaml or anything outside engage/mods/<folder>/.
+pub fn thumb_file_path(sd_root: &Path, folder: &str, file: &str) -> Option<PathBuf> {
+    if folder.is_empty() || folder.contains(['/', '\\']) || folder.starts_with("..") {
+        return None;
+    }
+    if !THUMB_EXTS.iter().any(|e| file == format!("thumbnail.{e}")) {
+        return None;
+    }
+    let path = mods_dir(sd_root).join(folder).join(file);
+    path.is_file().then_some(path)
+}
+
 // Install a downloaded GameBanana mod. `bytes` is the raw .zip we already fetched. Extracts into
 // engage/mods/<name>/, replacing any earlier install of the same mod, then writes a config.yaml
 // (recording the GameBanana source for auto-updates) when the mod doesn't already carry one.
-pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) -> Result<(), InstallError> {
+// Returns the install folder so the caller can decorate it (the preview thumbnail).
+pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) -> Result<PathBuf, InstallError> {
     if let Some(old) = installed_gamebanana_ids(sd_root).get(&detail.id) {
         let _ = std::fs::remove_dir_all(old);
     }
@@ -526,7 +548,7 @@ pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) 
         ensure_gamebanana_source(&dest, detail.id);
     }
 
-    Ok(())
+    Ok(dest)
 }
 
 // Install a downloaded NexusMods mod, same flow as GameBanana. The generated config records the
@@ -908,8 +930,6 @@ mod tests {
         assert_eq!(found[0].source, ModSource::Nexus(5150));
         assert_eq!(found[0].author.as_deref(), Some("Someone"));
         assert_eq!(found[0].description.as_deref(), Some("A cool mod"));
-        // The config file has bytes, so the mod reports a non-zero size.
-        assert!(found[0].size_bytes > 0);
         assert_eq!(found[1].name, "MyHandMod");
         assert_eq!(found[1].source, ModSource::Manual);
         assert!(!found[1].has_config);
@@ -966,6 +986,62 @@ mod tests {
         assert_eq!(found[0].source, ModSource::Manual);
         assert!(!found[0].has_config);
         assert_eq!(found[1].name, "Zipped Mod");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn thumbnail_write_probe_and_serve() {
+        let tmp = std::env::temp_dir().join(format!("cobalt_thumb_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mods = mods_dir(&tmp);
+
+        // A mod folder that gets a thumbnail — awkward name on purpose (space, #, unicode).
+        let with = mods.join("My #1 Mod ✨");
+        std::fs::create_dir_all(&with).unwrap();
+        std::fs::write(with.join("config.yaml"), "id: gamebanana.1\nname: Number One\n").unwrap();
+        write_thumbnail(&with, b"png-bytes", "png");
+        assert!(with.join("thumbnail.png").is_file());
+
+        // A re-install that switches formats replaces the old file instead of leaving both.
+        write_thumbnail(&with, b"jpg-bytes", "jpg");
+        assert!(!with.join("thumbnail.png").exists());
+        assert_eq!(std::fs::read(with.join("thumbnail.jpg")).unwrap(), b"jpg-bytes");
+
+        // Unknown extensions clamp to jpg rather than ever writing a thumbnail.exe.
+        write_thumbnail(&with, b"clamped", "exe");
+        assert!(!with.join("thumbnail.exe").exists());
+        assert_eq!(std::fs::read(with.join("thumbnail.jpg")).unwrap(), b"clamped");
+
+        // A folder without one, and a zipped mod (nowhere to keep a thumbnail).
+        std::fs::create_dir_all(mods.join("Bare")).unwrap();
+        let mut plain = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        plain.start_file("patches/thing.bin", opts).unwrap();
+        plain.write_all(b"data").unwrap();
+        let plain = plain.finish().unwrap().into_inner();
+        std::fs::write(mods.join("Zipped.zip"), &plain).unwrap();
+
+        // Scan reports the file name only where one exists.
+        let found = scan_installed_mods(&tmp);
+        assert_eq!(found.len(), 3);
+        assert_eq!(found[0].name, "Bare");
+        assert_eq!(found[0].thumb, None);
+        assert_eq!(found[1].thumb.as_deref(), Some("thumbnail.jpg"));
+        assert_eq!(found[2].name, "Zipped.zip");
+        assert_eq!(found[2].thumb, None);
+
+        // Serve-side resolution accepts exactly the real thumbnail...
+        let served = thumb_file_path(&tmp, "My #1 Mod ✨", "thumbnail.jpg").unwrap();
+        assert_eq!(served, with.join("thumbnail.jpg"));
+        // ...and rejects traversal, other files, unknown extensions, and misses.
+        assert!(thumb_file_path(&tmp, "..", "thumbnail.jpg").is_none());
+        assert!(thumb_file_path(&tmp, "a/b", "thumbnail.jpg").is_none());
+        assert!(thumb_file_path(&tmp, "a\\b", "thumbnail.jpg").is_none());
+        assert!(thumb_file_path(&tmp, "", "thumbnail.jpg").is_none());
+        assert!(thumb_file_path(&tmp, "My #1 Mod ✨", "config.yaml").is_none());
+        assert!(thumb_file_path(&tmp, "My #1 Mod ✨", "thumbnail.exe").is_none());
+        assert!(thumb_file_path(&tmp, "Bare", "thumbnail.jpg").is_none());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

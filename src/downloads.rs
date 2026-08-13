@@ -83,7 +83,9 @@ pub async fn install_transactional(
     plan.extend(gamebanana::resolve_engage_requirements(detail, &already).await);
 
     // 2. Download everything up front. A failure here means nothing has touched the disk yet.
-    let mut blobs: Vec<(ModDetail, Vec<u8>)> = Vec::with_capacity(plan.len());
+    // Each mod's zip is joined by its first preview image (for the installed folder's thumbnail);
+    // the image is decoration, so unlike the zip it's allowed to silently fail.
+    let mut blobs: Vec<(ModDetail, Vec<u8>, Option<(Vec<u8>, String)>)> = Vec::with_capacity(plan.len());
     for (i, (d, f)) in plan.iter().enumerate() {
         let what = if i == 0 { String::new() } else { format!("required mod: {}", d.name) };
         let mut last_pct = u64::MAX;
@@ -96,7 +98,10 @@ pub async fn install_transactional(
         })
         .await;
         match result {
-            Ok(bytes) => blobs.push((d.clone(), bytes)),
+            Ok(bytes) => {
+                let thumb = fetch_thumb(d).await;
+                blobs.push((d.clone(), bytes, thumb));
+            }
             Err(e) => return Err(format!("Download failed: {e}")),
         }
     }
@@ -104,9 +109,14 @@ pub async fn install_transactional(
     // 3. Install everything. If one fails, undo the ones we already added (leaving pre-existing mods).
     on_phase(Phase::Working { what: "Installing…".into() });
     let mut added: Vec<u64> = Vec::new();
-    for (d, bytes) in &blobs {
+    for (d, bytes, thumb) in &blobs {
         match install::install_gamebanana_mod(sd_root, d, bytes) {
-            Ok(()) => added.push(d.id),
+            Ok(dest) => {
+                added.push(d.id);
+                if let Some((tb, ext)) = thumb {
+                    install::write_thumbnail(&dest, tb, ext);
+                }
+            }
             Err(e) => {
                 for id in &added {
                     if !already.contains(id) {
@@ -118,6 +128,22 @@ pub async fn install_transactional(
         }
     }
     Ok(())
+}
+
+// Extension for a saved thumbnail, taken from the chosen render's file name. Anything odd becomes
+// jpg — GameBanana renders are jpg in practice, and the webview sniffs the real type anyway.
+fn thumb_ext(file: &str) -> String {
+    let ext = file.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    if install::THUMB_EXTS.contains(&ext.as_str()) { ext } else { "jpg".into() }
+}
+
+// The mod's first preview image, fetched to ride along with its zip — the original upload at full
+// resolution, so the saved art is good for any future surface, not just the row tile. Fully
+// best-effort: any miss (no images, network error, empty body) just means the placeholder shows.
+async fn fetch_thumb(detail: &ModDetail) -> Option<(Vec<u8>, String)> {
+    let img = detail.preview.images.first()?;
+    let bytes = gamebanana::download(&img.full_url(), |_, _| {}).await.ok()?;
+    (!bytes.is_empty()).then(|| (bytes, thumb_ext(&img.file)))
 }
 
 // The coroutine body: process install requests one at a time, updating the shared list as each goes.

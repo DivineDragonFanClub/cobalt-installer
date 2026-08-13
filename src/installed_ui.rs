@@ -73,8 +73,6 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         match sort_by().as_str() {
             "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
             "oldest" => list.sort_by_key(|m| m.installed_at),
-            "large" => list.sort_by_key(|m| std::cmp::Reverse(m.size_bytes)),
-            "small" => list.sort_by_key(|m| m.size_bytes),
             // scan_installed_mods already returns name order; re-sort anyway
             // so switching back from another sort restores it
             _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
@@ -115,8 +113,6 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                     option { value: "name", "Name" }
                     option { value: "recent", "Recently installed" }
                     option { value: "oldest", "Oldest first" }
-                    option { value: "large", "Largest first" }
-                    option { value: "small", "Smallest first" }
                 }
                 // List-level tools live behind the hamburger, same popover as the rows'.
                 div { class: "row_menu_anchor",
@@ -339,6 +335,59 @@ fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
     }
 }
 
+// Undo urlencoding_encode for one URL path segment (http's Uri::path() keeps percent-encoding, so
+// the handler decodes it itself). Strict: bad hex or invalid UTF-8 yields None → a 404, not a guess.
+fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = |c: &u8| (*c as char).to_digit(16).map(|d| d as u8);
+            out.push(hex(b.get(i + 1)?)? * 16 + hex(b.get(i + 2)?)?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+// Serves installed mods' saved preview images to the webview at /mod_thumb/<folder>/<file>.
+// Registered from Body — it's always mounted, while registering here in MyMods would tear the
+// protocol down on every tab switch. The handler runs synchronously on the main thread inside the
+// webview's scheme callback, in the registering component's scope, so reading the storage signals
+// is the same pattern as the nxm wry handler in main.rs. The install target is resolved per
+// request, so a mid-session sd_root switch just works. Anything unexpected answers 404 — never
+// panic in here, and never drop the responder (that would strand the request in the webview).
+pub(crate) fn use_thumb_protocol(installation_type: Signal<String>, sdcard_path: Signal<String>) {
+    use dioxus::desktop::wry::http::Response;
+    dioxus::desktop::use_asset_handler("mod_thumb", move |request, responder| {
+        let served = (|| {
+            let path = request.uri().path().to_string();
+            let mut segs = path.trim_start_matches('/').splitn(3, '/');
+            let (_name, folder, file) = (segs.next()?, segs.next()?, segs.next()?);
+            let folder = percent_decode(folder)?;
+            let file = percent_decode(file)?;
+            let sd = crate::resolve_sd_root(&installation_type(), &sdcard_path())?;
+            let full = install::thumb_file_path(&sd, &folder, &file)?;
+            let mime = match full.extension().and_then(|e| e.to_str()) {
+                Some("png") => "image/png",
+                Some("webp") => "image/webp",
+                Some("gif") => "image/gif",
+                _ => "image/jpeg",
+            };
+            let bytes = std::fs::read(&full).ok()?;
+            Response::builder().header("Content-Type", mime).body(bytes).ok()
+        })();
+        match served {
+            Some(resp) => responder.respond(resp),
+            None => responder.respond(Response::builder().status(404).body(Vec::new()).unwrap()),
+        }
+    });
+}
+
 
 #[component]
 fn InstalledRow(
@@ -382,8 +431,31 @@ fn InstalledRow(
         }
     };
 
+    // Row art: the preview saved at install time, served through the mod_thumb protocol below. The
+    // folder name is percent-encoded (spaces, #, unicode would break the URL), and v= busts the
+    // webview's image cache when a reinstall replaces the folder.
+    let thumb_src = entry.thumb.as_ref().map(|file| {
+        let v = entry
+            .installed_at
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("/mod_thumb/{}/{file}?v={v}", crate::gamebanana::urlencoding_encode(&entry.folder))
+    });
+
     rsx! {
         div { class: "installed_row",
+            div { class: "installed_thumb",
+                if let Some(src) = thumb_src {
+                    // Cover-cropped to the tile, same treatment as the browse cards and download
+                    // rows. Odd-aspect art just crops — "it is what it is" (a contain-over-blur
+                    // letterbox was tried and rejected).
+                    img { src: "{src}", alt: "", loading: "lazy" }
+                } else {
+                    // Interim placeholder (final art TBD): the package glyph on a neutral tile.
+                    span { class: "thumb_placeholder", {crate::icons::package(18)} }
+                }
+            }
             div { class: "installed_info",
                 div { class: "installed_name_line",
                     // A GameBanana mod's whole title links to its page, with the banana mark
@@ -432,22 +504,14 @@ fn InstalledRow(
                         span { class: chip_class, "{chip_label}" }
                     }
                 }
-                div { class: "installed_meta",
-                    // A missing config takes the byline's place as plain text, not a chip.
-                    if !entry.has_config {
-                        "Mod has no config file"
-                        if entry.size_bytes > 0 {
-                            " · "
-                        }
-                    } else if let Some(author) = entry.author.clone() {
+                // A missing config takes the byline's place as plain text, not a chip. A mod
+                // with a config but no author gets no meta line at all.
+                if !entry.has_config {
+                    div { class: "installed_meta", "Mod has no config file" }
+                } else if let Some(author) = entry.author.clone() {
+                    div { class: "installed_meta",
                         "by "
                         {highlight(&author, &query)}
-                        if entry.size_bytes > 0 {
-                            " · "
-                        }
-                    }
-                    if entry.size_bytes > 0 {
-                        "{crate::gamebanana::format_filesize(entry.size_bytes)}"
                     }
                 }
                 if let Some(desc) = entry.description.clone() {

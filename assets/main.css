@@ -2166,8 +2166,8 @@ button.lb_dot.on {
     align-items: center;
 }
 .download_thumb {
-    width: 72px;
-    height: 40px;
+    width: 144px;
+    height: 81px;
     flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
@@ -2178,6 +2178,37 @@ button.lb_dot.on {
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+/* Installed-row artwork: the saved preview cover-cropped to a fixed 16:9 tile, the same treatment
+   as the browse cards and download rows. (A contain-over-blur letterbox was tried and rejected —
+   for GameBanana's landscape renders it looked identical, and odd shapes can just crop.) */
+.installed_thumb {
+    position: relative;
+    width: 144px; /* matches .download_thumb so the live rows above stay column-aligned */
+    aspect-ratio: 16 / 9;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg);
+    /* Rows vary in height (one-liners up to clamped descriptions); the fixed 16:9 card rides
+       the vertical middle so short and tall rows both read balanced. Stretching to row height
+       was tried and rejected: placeholder rows became heavy dark slabs. */
+    align-self: center;
+}
+.installed_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.installed_thumb .thumb_placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faint);
 }
 .download_row .progress {
     height: 8px;

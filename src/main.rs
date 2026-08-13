@@ -806,6 +806,10 @@ fn Body(status_message: Signal<String>) -> Element {
     // folder the mod browser installs into.
     let installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || "Ryujinx".to_string());
     let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || "".to_string());
+    // The webview protocol serving installed mods' saved preview images to the My Mods rows. Lives
+    // here because Body is always mounted; it reads the two target signals per request, so it
+    // follows the user's install-target choice without any state of its own.
+    installed_ui::use_thumb_protocol(installation_type, user_selected_sdcard_path);
     let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
     // First run walks the user through picking their device and confirming Cobalt is there. Once
     // done we remember it and go straight to the main app on later launches.

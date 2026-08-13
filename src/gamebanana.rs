@@ -40,10 +40,14 @@ pub struct Image {
 }
 
 impl Image {
+    // The file name of the card-sized render (530 → 220 → original).
+    pub fn thumb_file(&self) -> &str {
+        self.file530.as_deref().or(self.file220.as_deref()).unwrap_or(&self.file)
+    }
+
     // A card-sized thumbnail, preferring the 530 then 220 render, falling back to the full image.
     pub fn thumb_url(&self) -> String {
-        let file = self.file530.as_ref().or(self.file220.as_ref()).unwrap_or(&self.file);
-        format!("{}/{}", self.base_url, file)
+        format!("{}/{}", self.base_url, self.thumb_file())
     }
 
     // The original upload, for the lightbox.
@@ -430,9 +434,9 @@ pub fn format_filesize(bytes: u64) -> String {
     }
 }
 
-// Tiny percent-encoder for the search query so we don't pull in a crate just for this. Encodes
-// everything that isn't an unreserved URL character.
-fn urlencoding_encode(s: &str) -> String {
+// Tiny percent-encoder so we don't pull in a crate just for this. Encodes everything that isn't an
+// unreserved URL character. Used for search queries and for mod folder names in mod_thumb URLs.
+pub(crate) fn urlencoding_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

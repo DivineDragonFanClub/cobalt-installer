@@ -25,6 +25,8 @@ const ICON_INSTALL: Asset = asset!("/assets/icon_forge.png");
 const ICON_BROWSE: Asset = asset!("/assets/icon_browse.png");
 const ICON_MYMODS: Asset = asset!("/assets/icon_mymods.png");
 const ICON_SOLA: Asset = asset!("/assets/icon_sola_cave.png");
+// Fortune Telling card, marking manually-installed mods in My Mods.
+const ICON_FORTUNE: Asset = asset!("/assets/icon_fortune.png");
 // Pixel-art banana (GameBanana's mascot, white stripped to alpha) shown
 // before the "Open on GameBanana" link in the mod detail overlay.
 const ICON_GAMEBANANA: Asset = asset!("/assets/icon_gamebanana.png");
@@ -451,6 +453,38 @@ pub(crate) fn open_dir(path: impl AsRef<Path>) -> std::io::Result<Child> {
     Command::new(cmd).arg(path.as_ref()).spawn()
 }
 
+// The menu label that goes with reveal_in_file_browser, in the OS's own vocabulary.
+#[cfg(feature = "desktop")]
+pub(crate) fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Show in Finder"
+    } else if cfg!(target_os = "windows") {
+        "Show in Explorer"
+    } else {
+        "Show in file manager"
+    }
+}
+
+// Reveal (select) a file or folder in the OS file browser rather than opening it.
+pub(crate) fn reveal_in_file_browser(path: impl AsRef<Path>) -> std::io::Result<Child> {
+    match std::env::consts::OS {
+        "macos" => Command::new("open").arg("-R").arg(path.as_ref()).spawn(),
+        "windows" => {
+            // explorer wants the switch and path as one argument: /select,C:\...
+            let mut arg = std::ffi::OsString::from("/select,");
+            arg.push(path.as_ref());
+            Command::new("explorer").arg(arg).spawn()
+        }
+        _ => {
+            // No portable "reveal" on Linux; opening the parent folder is the usual stand-in.
+            let parent = path.as_ref().parent().map(Path::to_path_buf);
+            Command::new("xdg-open")
+                .arg(parent.unwrap_or_else(|| path.as_ref().to_path_buf()))
+                .spawn()
+        }
+    }
+}
+
 
 #[cfg(feature = "desktop")]
 fn construct_bad_subsdk9_path(emulator: &Emulator) -> Option<PathBuf> {
@@ -624,6 +658,8 @@ fn App() -> Element {
                  .tt_night {{ background-image: url(\"{ICON_NIGHT}\"); }}\n\
                  .tt_evening {{ background-image: url(\"{ICON_EVENING}\"); }}\n\
                          .gb_link::before {{ content: \"\"; display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; background: url(\"{ICON_GAMEBANANA}\") no-repeat center / contain; image-rendering: pixelated; }}\n\
+                         .src_mark.gb {{ background-image: url(\"{ICON_GAMEBANANA}\"); image-rendering: pixelated; width: 13px; height: 13px; }}\n\
+                         .src_mark.fortune {{ background-image: url(\"{ICON_FORTUNE}\"); }}\n\
                          .bonds::after {{ content: \"\"; display: inline-block; width: 14px; height: 16px; margin-left: 6px; vertical-align: -3px; background: url(\"{ICON_BONDS}\") no-repeat center / contain; }}",
                 )
             }
@@ -782,6 +818,18 @@ fn Body(status_message: Signal<String>) -> Element {
     // folder the mod browser installs into.
     let installation_type = use_storage::<LocalStorage, String>("installation_type".into(), || "Ryujinx".to_string());
     let user_selected_sdcard_path = use_storage::<LocalStorage, String>("sd_card_path".into(), || "".to_string());
+    // The webview protocol serving installed mods' saved preview images to the My Mods rows. Lives
+    // here because Body is always mounted; it reads the two target signals per request, so it
+    // follows the user's install-target choice without any state of its own.
+    installed_ui::use_thumb_protocol(installation_type, user_selected_sdcard_path);
+    // Sample the webview's timezone once so gamebanana::format_date prints local calendar days
+    // (an evening install formatted in UTC reads as tomorrow's date).
+    use_future(|| async {
+        let mut offset = document::eval("dioxus.send(new Date().getTimezoneOffset());");
+        if let Ok(minutes) = offset.recv::<i32>().await {
+            gamebanana::set_local_offset_minutes(minutes);
+        }
+    });
     let nexus_apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
     // First run walks the user through picking their device and confirming Cobalt is there. Once
     // done we remember it and go straight to the main app on later launches.

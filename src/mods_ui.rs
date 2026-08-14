@@ -362,6 +362,8 @@ pub(crate) fn ModDetailPanel(
             // 11px, but macOS may hand the webview zero-width overlay scrollbars instead.
             "const gutter = window.innerWidth - document.documentElement.clientWidth;\n\
              document.documentElement.style.setProperty('--scroll-gutter', gutter + 'px');\n\
+             window.__lock_scroll_y = window.scrollY;\n\
+             document.body.style.top = -window.scrollY + 'px';\n\
              document.documentElement.classList.add('modal_open');\n\
              window.__esc_close = (e) => {\n\
                  if (!['Escape', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;\n\
@@ -406,6 +408,9 @@ pub(crate) fn ModDetailPanel(
     use_drop(|| {
         document::eval(
             "document.documentElement.classList.remove('modal_open');\n\
+             document.body.style.top = '';\n\
+             window.scrollTo(0, window.__lock_scroll_y || 0);\n\
+             delete window.__lock_scroll_y;\n\
              document.removeEventListener('keydown', window.__esc_close);\n\
              delete window.__esc_close;",
         );
@@ -447,6 +452,7 @@ pub(crate) fn DetailSkeleton() -> Element {
     rsx! {
         div { class: "detail_skeleton",
             div { class: "skeleton_line title" }
+            div { class: "skeleton_line subtitle" }
             div { class: "skeleton_line meta" }
             div { class: "skeleton_screens",
                 div { class: "skeleton_box shot" }
@@ -473,6 +479,10 @@ pub(crate) fn ModDetailContent(
     let description = gamebanana::sanitize_description(&detail.description_html);
     let subtitle = detail.subtitle.clone().unwrap_or_default();
     let is_installed = installed().contains(&detail.id);
+    // The header's ⋯ menu, same popover pattern as the My Mods rows: the site link always, reveal
+    // and delete (in-place confirm) only while an installed copy exists.
+    let mut menu_open = use_signal(|| false);
+    let mut confirming = use_signal(|| false);
     // Files grouped by their version tag: one release often ships several alternate zips (main +
     // addon, classes-only vs full), and none of those are "older" than each other. Tags are
     // modder-typed free text ("5.4", "classes only"), so they're matched, never parsed as semver.
@@ -531,18 +541,75 @@ pub(crate) fn ModDetailContent(
                 div { class: "mod_detail_meta", "{meta}" }
             }
             div { class: "mod_detail_actions",
-                if is_installed {
+                div { class: "row_menu_anchor",
                     button {
-                        class: "danger",
-                        onclick: {
-                            let sd = sd_root.clone();
-                            let id = detail.id;
-                            move |_| {
-                                install::uninstall_gamebanana_mod(&sd, id);
-                                installed.set(install::installed_gamebanana_ids(&sd).into_keys().collect());
-                            }
+                        class: "ghost kebab",
+                        title: "More actions",
+                        onclick: move |_| {
+                            confirming.set(false);
+                            menu_open.set(!menu_open());
                         },
-                        "Uninstall"
+                        {crate::icons::dots(16)}
+                    }
+                    if menu_open() {
+                        // Invisible click-catcher: any click outside the menu closes it.
+                        div {
+                            class: "menu_backdrop",
+                            onclick: move |_| {
+                                menu_open.set(false);
+                                confirming.set(false);
+                            },
+                        }
+                        div { class: "row_menu",
+                            a {
+                                class: "menu_item",
+                                href: "https://gamebanana.com/mods/{detail.id}",
+                                onclick: move |_| menu_open.set(false),
+                                "Open on GameBanana"
+                            }
+                            if is_installed {
+                                button {
+                                    class: "menu_item",
+                                    onclick: {
+                                        let sd = sd_root.clone();
+                                        let id = detail.id;
+                                        move |_| {
+                                            menu_open.set(false);
+                                            // Looked up at click time: the folder is wherever the
+                                            // installer last put this mod.
+                                            if let Some(dir) = install::installed_gamebanana_ids(&sd).get(&id) {
+                                                let _ = crate::reveal_in_file_browser(dir);
+                                            }
+                                        }
+                                    },
+                                    {crate::reveal_label()}
+                                }
+                                // Delete confirms in place, nothing moves under the cursor. The
+                                // panel stays open; the action row flips back to Install.
+                                if confirming() {
+                                    button {
+                                        class: "menu_item danger_item armed",
+                                        onclick: {
+                                            let sd = sd_root.clone();
+                                            let id = detail.id;
+                                            move |_| {
+                                                menu_open.set(false);
+                                                confirming.set(false);
+                                                install::uninstall_gamebanana_mod(&sd, id);
+                                                installed.set(install::installed_gamebanana_ids(&sd).into_keys().collect());
+                                            }
+                                        },
+                                        "Confirm delete"
+                                    }
+                                } else {
+                                    button {
+                                        class: "menu_item danger_item",
+                                        onclick: move |_| confirming.set(true),
+                                        "Delete"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 button { class: "close", onclick: move |_| on_close.call(()), {crate::icons::x(15)} }
@@ -573,9 +640,17 @@ pub(crate) fn ModDetailContent(
                 let caption = img.caption.clone().unwrap_or_default();
                 rsx! {
                     div { class: "lightbox_overlay", onclick: move |_| lightbox.set(None),
+                        button {
+                            class: "close lb_close",
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                lightbox.set(None);
+                            },
+                            {crate::icons::x(16)}
+                        }
                         if n > 1 {
                             button {
-                                class: "lb_nav",
+                                class: "lb_nav lb_prev",
                                 onclick: move |e| {
                                     e.stop_propagation();
                                     lightbox.set(Some((i + n - 1) % n));
@@ -593,14 +668,26 @@ pub(crate) fn ModDetailContent(
                                         div { class: "lb_caption", "{caption}" }
                                     }
                                     if n > 1 {
-                                        div { class: "lb_count", "{i + 1} / {n}" }
+                                        div { class: "lb_dots",
+                                            for d in 0..n {
+                                                button {
+                                                    key: "{d}",
+                                                    class: if d == i { "lb_dot on" } else { "lb_dot" },
+                                                    title: "Screenshot {d + 1} of {n}",
+                                                    onclick: move |e| {
+                                                        e.stop_propagation();
+                                                        lightbox.set(Some(d));
+                                                    },
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                         if n > 1 {
                             button {
-                                class: "lb_nav",
+                                class: "lb_nav lb_next",
                                 onclick: move |e| {
                                     e.stop_propagation();
                                     lightbox.set(Some((i + 1) % n));

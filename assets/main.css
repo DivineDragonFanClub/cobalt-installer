@@ -92,8 +92,14 @@ html.modal_open {
     overflow-y: hidden;
 }
 html.modal_open body {
-    /* set at lock time to the measured scrollbar width — 11px for our classic bars,
-       0 when macOS gives the webview overlay scrollbars */
+    /* Pinning the body is what actually freezes the page: this webview keeps wheel-scrolling
+       the document under overflow-y: hidden alone. The inline top (set at lock time) parks the
+       page at its pre-lock offset, and the unlock eval restores the scroll position. The
+       margin is the measured scrollbar width — 11px for our classic bars, 0 when macOS hands
+       the webview overlay scrollbars. */
+    position: fixed;
+    left: 0;
+    right: 0;
     margin-right: var(--scroll-gutter, 0px);
 }
 
@@ -494,7 +500,7 @@ button.engage:hover:enabled {
     padding: 8px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius);
 }
 /* Brand bar at the top of the sidebar: Sammie + name. Not a nav item — only
    the Sammie click does anything (the easter egg). */
@@ -862,13 +868,27 @@ input:focus {
 .mod_search_bar input[type="text"] {
     flex: 1;
 }
-/* input and select share one height so the bar reads as a single strip
+/* input and select share one height and the container radius so the bar reads
+   as a single strip on the same corner system as the sidebar panel beside it
    (natural heights differ: input ~42, select ~36) */
 .mod_search_bar input[type="text"],
 .mod_search_bar .category_select {
+    border-radius: var(--radius);
     height: 40px;
     padding-top: 0;
     padding-bottom: 0;
+}
+/* SELECT ONLY (keep this out of the shared block above — a chevron on the search
+   input reads as a phantom dropdown): the native menulist ignores authored corners
+   (WebKit clamps them to its own 5px), so the closed control goes custom to sit on
+   the shared 10px token. Inline-SVG chevron in a both-themes gray; the dropdown
+   menu itself stays native. */
+.mod_search_bar .category_select {
+    appearance: none;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888f9b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
 }
 .category_select:disabled {
     opacity: 0.5;
@@ -893,8 +913,8 @@ input:focus {
     font-size: 11px;
     font-weight: 600;
     padding: 2px 8px;
-    /* same corner curvature as the operational plaque buttons */
-    border-radius: 3px;
+    /* the shared small-corner token — one curve family app-wide */
+    border-radius: var(--radius-sm);
     line-height: 1.6;
     white-space: nowrap;
 }
@@ -923,13 +943,185 @@ input:focus {
     color: var(--warn);
     border: 1px solid light-dark(#e4d38b, #6b5e1e);
 }
+/* small source marks that ride beside the title (image injected from main.rs) */
+.src_mark {
+    display: inline-block;
+    width: 15px;
+    height: 14px;
+    background: no-repeat center / contain;
+    flex-shrink: 0;
+}
+
+/* a GameBanana mod's title is the link to its page, banana riding after the text;
+   manual mods use the same title-plus-mark shape (fortune card), just unlinked */
+a.installed_name_link,
+.installed_name_group {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+}
+a.installed_name_link:hover {
+    text-decoration: none;
+}
+a.installed_name_link:hover .installed_name {
+    color: light-dark(#8a5e10, #f4c56b);
+    transition: color 0.12s;
+}
+/* GB titles keep the banana-gold hover tint */
+.installed_name_group.gb:hover .installed_name {
+    color: light-dark(#8a5e10, #f4c56b);
+    transition: color 0.12s;
+}
+/* manual rows share the rhythm, tinted to their fortune card's blue; it hovers
+   like a link even though clicking only summons the origin note */
+.installed_name_group {
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    /* the fortune card's circular badge carries its own inner padding, so the
+       geometric gap must be smaller than the banana's to LOOK the same */
+    gap: 3px;
+}
+.installed_name_group:hover .installed_name {
+    color: light-dark(#2a6fa8, #8fd0f5);
+    transition: color 0.12s;
+}
+/* the click-summoned origin note */
+.origin_tip {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 0;
+    z-index: 60;
+    white-space: nowrap;
+    padding: 6px 11px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+/* ---- Row ⋯ menu ------------------------------------------------------------ */
+.row_menu_anchor {
+    position: relative;
+}
+/* the search bar's hamburger lines up with the rows' ⋯ column: row cards inset
+   their kebab 16px, the bar doesn't, so the anchor carries the difference */
+.mod_search_bar .row_menu_anchor {
+    margin-right: 16px;
+}
+/* the search input plus its live match-count readout */
+.search_wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+}
+.search_wrap input[type="text"] {
+    width: 100%;
+    /* room for the "49 mods installed" readout so text never runs under it */
+    padding-right: 140px;
+}
+.search_count {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--faint);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/* boxless: just the dots, with a soft pad appearing on hover. Doubled-up class
+   so this outranks the ghost plaque rules that come later in the file. */
+button.ghost.kebab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 35px;
+    padding: 0;
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+}
+button.ghost.kebab:hover:enabled {
+    background: var(--surface-3);
+    border-color: transparent;
+    color: var(--text);
+}
+/* No pressed nudge on the ⋯/hamburger glyphs: the popover opens on top of the trigger, so the
+   global 1px translate reads as a flicker under it. The menu appearing is the click feedback. */
+button.ghost.kebab:active:enabled {
+    transform: none;
+}
+.menu_backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    /* the catcher can live inside a cursor:pointer anchor (the manual-mod title);
+       without this the whole screen shows a hand while it's up */
+    cursor: default;
+}
+.row_menu {
+    /* overlaps its ⋯ trigger (the native-menu pattern) rather than dropping below it */
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    z-index: 60;
+    min-width: 178px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+}
+.row_menu .menu_item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    transition: background-color 0.12s;
+}
+.row_menu .menu_item:hover {
+    background: var(--surface-2);
+    border: none;
+    text-decoration: none;
+}
+.row_menu .menu_item.danger_item {
+    color: var(--danger);
+}
+.row_menu .menu_item.danger_item:hover {
+    background: var(--danger-dim);
+}
+/* the armed state Delete flips into before the destructive click */
+.row_menu .menu_item.danger_item.armed {
+    background: var(--danger-dim);
+    font-weight: 600;
+}
 .premium_badge {
     background: light-dark(#f5e8c6, #4a3a10);
     color: light-dark(#8a5e10, #f4c56b);
     font-size: 11px;
     font-weight: 600;
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
 }
 
 /* ---- Mod grid + cards ----------------------------------------------------- */
@@ -1004,7 +1196,8 @@ input:focus {
     font-size: 11px;
     font-weight: 600;
     padding: 3px 9px;
-    border-radius: 999px;
+    /* the shared small-corner token, not a capsule — one curve family app-wide */
+    border-radius: var(--radius-sm);
     color: #fff;
     background: rgba(0, 0, 0, 0.62);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1033,7 +1226,7 @@ input:focus {
     font-size: 11px;
     font-weight: 600;
     padding: 3px 9px;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     color: #e2e8f2;
     background: rgba(0, 0, 0, 0.62);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1073,7 +1266,7 @@ input:focus {
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     font-size: 11px;
 }
 
@@ -1142,40 +1335,58 @@ input:focus {
 
 /* Detail-panel skeleton: mirrors the loaded layout's geometry (title, meta,
    screenshot strip, description lines, file row). */
+/* Measured against the loaded layout (storybook fixture, title y26 / subtitle y61 / meta y86 /
+   strip y136) so content lands where the bones were and nothing visibly jumps. The subtitle
+   line is a guess — most GB mods carry one; a mod without it settles 25px higher, a far smaller
+   shift than omitting the line was causing. Explicit margins, no flex gap: every position here
+   is load-bearing. */
 .detail_skeleton {
     display: flex;
     flex-direction: column;
-    gap: 12px;
 }
 .detail_skeleton .skeleton_line.title {
-    height: 20px;
+    height: 30px;
     width: 34%;
     border-radius: 5px;
+    margin-bottom: 5px;
+}
+.detail_skeleton .skeleton_line.subtitle {
+    height: 21px;
+    width: 22%;
+    margin-bottom: 4px;
 }
 .detail_skeleton .skeleton_line.meta {
+    height: 19px;
     width: 46%;
-    margin-bottom: 8px;
+    margin-bottom: 31px;
 }
 .detail_skeleton .skeleton_screens {
     display: flex;
     gap: 10px;
     overflow: hidden;
-    padding-bottom: 8px;
-    margin-bottom: 6px;
+    /* the loaded strip reserves a horizontal-scrollbar gutter under the shots */
+    padding-bottom: 19px;
+    margin-bottom: 18px;
 }
 .detail_skeleton .skeleton_box.shot {
-    width: 285px;
+    width: 283px;
     height: 160px;
     flex-shrink: 0;
     aspect-ratio: auto;
     border-radius: 8px;
 }
+.detail_skeleton .skeleton_line.w90,
+.detail_skeleton .skeleton_line.w70 {
+    margin-bottom: 12px;
+}
+.detail_skeleton .skeleton_line.w55 {
+    margin-bottom: 18px;
+}
 .detail_skeleton .skeleton_box.filerow {
     width: 100%;
-    height: 66px;
+    height: 69px;
     aspect-ratio: auto;
     border-radius: 6px;
-    margin-top: 8px;
 }
 
 .mod_message {
@@ -1429,7 +1640,7 @@ input:focus {
     position: relative;
     background: var(--surface);
     border: 1px solid var(--border-strong);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 26px;
     width: 100%;
     box-shadow: var(--shadow-lg);
@@ -1565,6 +1776,23 @@ input:focus {
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
 }
+/* the standard close chip, in black-glass clothes, pinned to the overlay's corner */
+.lightbox_overlay button.lb_close {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    width: 34px;
+    height: 34px;
+    background: rgba(20, 24, 31, 0.6);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #e8ebf1;
+    z-index: 5;
+}
+.lightbox_overlay button.lb_close:hover:enabled {
+    background: rgba(42, 50, 64, 0.85);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
 /* caption + counter hang below the image out of layout flow, so the image sits
    dead-center whether they exist or not */
 .lb_meta {
@@ -1586,12 +1814,35 @@ input:focus {
     line-height: 1.5;
     text-align: center;
 }
-.lb_count {
-    color: rgba(232, 235, 241, 0.55);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
+/* slide dots: one per screenshot, the current one lit; clickable to jump */
+.lb_dots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 3px 0;
+    pointer-events: auto;
+}
+button.lb_dot {
+    width: 9px;
+    height: 9px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.32);
+    transition: background-color 0.2s;
+}
+button.lb_dot:hover {
+    background: rgba(255, 255, 255, 0.6);
+}
+button.lb_dot.on {
+    background: #fff;
 }
 .lightbox_overlay button.lb_nav {
+    /* pinned to the overlay's edges, so they never move with the image's size */
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
     width: 44px;
     height: 44px;
     padding: 0;
@@ -1603,6 +1854,21 @@ input:focus {
     line-height: 1;
     flex-shrink: 0;
     transition: background-color 0.2s;
+    z-index: 5;
+}
+/* Anchored just outside where a full-size 16:9 slide's edges land (images are
+   height-capped, so that width is a constant of the window, not of the slide) —
+   close to the picture, but never moving between slides. The clamp keeps them
+   on-screen when the window gets small. */
+.lightbox_overlay {
+    --lb-reach: calc((100vh - 190px) * 8 / 9 + 16px);
+}
+.lightbox_overlay button.lb_prev {
+    right: clamp(50%, calc(50% + var(--lb-reach)), calc(100% - 68px));
+    left: auto;
+}
+.lightbox_overlay button.lb_next {
+    left: clamp(50%, calc(50% + var(--lb-reach)), calc(100% - 68px));
 }
 .lightbox_overlay button.lb_nav:hover {
     background: rgba(255, 255, 255, 0.18);
@@ -1847,34 +2113,7 @@ input:focus {
 }
 
 /* ---- My Mods view --------------------------------------------------------- */
-#my_mods {
-    margin-top: 2px;
-}
-.my_mods_head {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-.my_mods_title {
-    /* column so the changing count ("3 of 49") never resizes the row and
-       shoves the search input around */
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-.my_mods_title h2 {
-    font-size: 18px;
-}
-.my_mods_title .count {
-    color: var(--faint);
-    font-size: 13px;
-}
-.my_mods_actions {
-    margin-left: auto;
-    display: flex;
-    gap: 8px;
-}
+/* (No top margin: the search bar's top edge lines up exactly with the sidebar box.) */
 /* search-match highlight: a soft gold wash, readable in both themes. No
    padding — the box-shadow halo adds breathing room without changing the
    text's width, so rows don't reflow as you type. */
@@ -1929,13 +2168,37 @@ input:focus {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.installed_desc.expanded {
+    display: block;
+    -webkit-line-clamp: none;
+}
+/* The Show more/less toggle under a clamped description: bare link-like text, no plaque.
+   Doubled class beats the global button hover/press rules, same trick as .ghost.kebab. */
+button.ghost.desc_toggle {
+    display: block;
+    padding: 0;
+    margin-top: 3px;
+    background: transparent;
+    border-color: transparent;
+    font-size: 12px;
+    color: var(--faint);
+}
+button.ghost.desc_toggle:hover:enabled {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text);
+}
+button.ghost.desc_toggle:active:enabled {
+    transform: none; /* same no-nudge rule as the ⋯/hamburger glyphs */
+}
 .installed_row_actions {
     display: flex;
     gap: 8px;
     flex-shrink: 0;
-    /* keep the buttons vertically centered against the first line of text */
+    /* center the ⋯ against the title line: the button is taller than the text
+       line, so it pulls up to put its dots on the title's midline */
     align-items: center;
-    padding-top: 2px;
+    margin-top: -7px;
 }
 
 /* Live install rows (a download in progress), shown above the installed list. */
@@ -1946,8 +2209,8 @@ input:focus {
     align-items: center;
 }
 .download_thumb {
-    width: 72px;
-    height: 40px;
+    width: 168px;
+    height: 95px;
     flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
@@ -1958,6 +2221,39 @@ input:focus {
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+/* Installed-row artwork: the saved preview cover-cropped to a fixed 16:9 tile, the same treatment
+   as the browse cards and download rows. (A contain-over-blur letterbox was tried and rejected —
+   for GameBanana's landscape renders it looked identical, and odd shapes can just crop.) */
+.installed_thumb {
+    position: relative;
+    width: 168px; /* matches .download_thumb so the live rows above stay column-aligned */
+    aspect-ratio: 16 / 9;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg);
+    /* Centered on the row's cross axis. (Stretch-to-row-height was tried and rejected:
+       placeholder rows became heavy dark slabs.) */
+    align-self: center;
+}
+.installed_thumb.clickable {
+    cursor: pointer;
+}
+.installed_thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.installed_thumb .thumb_placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faint);
 }
 .download_row .progress {
     height: 8px;

@@ -40,10 +40,14 @@ pub struct Image {
 }
 
 impl Image {
+    // The file name of the card-sized render (530 → 220 → original).
+    pub fn thumb_file(&self) -> &str {
+        self.file530.as_deref().or(self.file220.as_deref()).unwrap_or(&self.file)
+    }
+
     // A card-sized thumbnail, preferring the 530 then 220 render, falling back to the full image.
     pub fn thumb_url(&self) -> String {
-        let file = self.file530.as_ref().or(self.file220.as_ref()).unwrap_or(&self.file);
-        format!("{}/{}", self.base_url, file)
+        format!("{}/{}", self.base_url, self.thumb_file())
     }
 
     // The original upload, for the lightbox.
@@ -397,12 +401,26 @@ pub fn format_count(n: u64) -> String {
     format!("{s}{suffix}")
 }
 
-// Format a GameBanana unix timestamp as "Jan 1, 2026" (UTC). Day-level metadata, so we skip
-// timezone handling and a chrono dependency.
+// The machine's UTC offset in minutes (JS getTimezoneOffset convention: positive west of UTC),
+// sampled once from the webview at startup — the one place that knows the timezone without a
+// chrono dependency. Until it arrives, dates format as UTC; every date-bearing view opens on
+// user action well after startup, so the race window is invisible in practice.
+static LOCAL_OFFSET_MIN: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+pub fn set_local_offset_minutes(minutes: i32) {
+    LOCAL_OFFSET_MIN.store(minutes, std::sync::atomic::Ordering::Relaxed);
+}
+
+// Format a unix timestamp as "Jan 1, 2026" in LOCAL time. Day-level metadata, but the calendar
+// day has to be the user's: an evening install formatted in UTC reads as tomorrow's date. The
+// offset is today's (a date across a DST boundary can shift only within an hour of midnight —
+// invisible at day precision).
 pub fn format_date(ts: u64) -> String {
     const MONTHS: [&str; 12] =
         ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    let (y, m, d) = civil_from_days((ts / 86_400) as i64);
+    let offset = LOCAL_OFFSET_MIN.load(std::sync::atomic::Ordering::Relaxed) as i64;
+    let local_secs = ts as i64 - offset * 60;
+    let (y, m, d) = civil_from_days(local_secs.div_euclid(86_400));
     format!("{} {}, {}", MONTHS[(m - 1) as usize], d, y)
 }
 
@@ -430,9 +448,9 @@ pub fn format_filesize(bytes: u64) -> String {
     }
 }
 
-// Tiny percent-encoder for the search query so we don't pull in a crate just for this. Encodes
-// everything that isn't an unreserved URL character.
-fn urlencoding_encode(s: &str) -> String {
+// Tiny percent-encoder so we don't pull in a crate just for this. Encodes everything that isn't an
+// unreserved URL character. Used for search queries and for mod folder names in mod_thumb URLs.
+pub(crate) fn urlencoding_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

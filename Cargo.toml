@@ -20,7 +20,9 @@ reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tl
 # needs to cross-compile for android.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 dioxus-desktop = "0.7.9"
-dioxus-sdk = { version = "0.7.0", features = ["storage"] }
+dioxus-sdk = { version = "0.7.0", features = ["storage", "time"] }
+# System clipboard for "Copy mod list" (dioxus-sdk 0.7 has no clipboard feature).
+arboard = { version = "3", default-features = false }
 # dev bridge: lets external tools (MCP debuggers) eval JS in the running app.
 # desktop-only, and the wiring is additionally gated to debug_assertions.
 dioxus-inspector = { version = "0.1.2", optional = true }

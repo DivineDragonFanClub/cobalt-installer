@@ -40,7 +40,7 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
     });
 
     let refresh_root = sd_root.clone();
-    let refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
+    let mut refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
 
     // Open the whole mods folder in the OS file browser.
     let open_root = sd_root.clone();
@@ -48,6 +48,9 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         let mods_dir = open_root.join("engage").join("mods");
         let _ = crate::open_dir(mods_dir);
     };
+
+    // The hamburger next to the sort select, holding the list-level tools.
+    let mut tools_open = use_signal(|| false);
 
     // Case-insensitive filter over name + folder slug + author + description
     // (author comes from the mod's config.yaml, which the scanner already
@@ -67,49 +70,35 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                     || m.description.as_deref().unwrap_or("").to_lowercase().contains(&q)
             });
         }
-        match sort_by().as_str() {
-            "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
-            "oldest" => list.sort_by_key(|m| m.installed_at),
-            "large" => list.sort_by_key(|m| std::cmp::Reverse(m.size_bytes)),
-            "small" => list.sort_by_key(|m| m.size_bytes),
-            // scan_installed_mods already returns name order; re-sort anyway
-            // so switching back from another sort restores it
-            _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-        }
+        sort_mods(&mut list, &sort_by());
         list
     });
 
     rsx! {
         div { id: "my_mods",
-            div { class: "my_mods_head",
-                div { class: "my_mods_title",
-                    h2 { "Installed mods" }
-                    span { class: "count",
+            // No page title: the mod count lives in the search placeholder, and the
+            // match count surfaces inside the input while a query is active.
+            div { class: "mod_search_bar",
+                div { class: "search_wrap",
+                    input {
+                        r#type: "text",
+                        placeholder: "Search name, author or description…",
+                        // mod names are codes and slugs — keep the OS text helpers out
+                        autocomplete: "off",
+                        autocapitalize: "off",
+                        spellcheck: "false",
+                        "autocorrect": "off",
+                        value: "{query}",
+                        oninput: move |e| query.set(e.value()),
+                    }
+                    // Idle: the library size. Filtering: how much of it matches.
+                    span { class: "search_count",
                         if query().trim().is_empty() {
-                            "{mods().len()} installed"
+                            "{mods().len()} mods installed"
                         } else {
                             "{filtered().len()} of {mods().len()}"
                         }
                     }
-                }
-                div { class: "my_mods_actions",
-                    button { class: "ghost", onclick: open_mods_folder, "Open folder" }
-                    button { class: "ghost", onclick: refresh, "Refresh" }
-                }
-            }
-
-            // Same bar layout as the Browse view: search stretches, sort trails.
-            div { class: "mod_search_bar",
-                input {
-                    r#type: "text",
-                    placeholder: "Search name, author or description…",
-                    // mod names are codes and slugs — keep the OS text helpers out
-                    autocomplete: "off",
-                    autocapitalize: "off",
-                    spellcheck: "false",
-                    "autocorrect": "off",
-                    value: "{query}",
-                    oninput: move |e| query.set(e.value()),
                 }
                 select {
                     class: "category_select",
@@ -118,8 +107,55 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                     option { value: "name", "Name" }
                     option { value: "recent", "Recently installed" }
                     option { value: "oldest", "Oldest first" }
-                    option { value: "large", "Largest first" }
-                    option { value: "small", "Smallest first" }
+                }
+                // List-level tools live behind the hamburger, same popover as the rows'.
+                div { class: "row_menu_anchor",
+                    button {
+                        class: "ghost kebab",
+                        title: "List tools",
+                        onclick: move |_| tools_open.set(!tools_open()),
+                        {crate::icons::hamburger(16)}
+                    }
+                    if tools_open() {
+                        div { class: "menu_backdrop", onclick: move |_| tools_open.set(false) }
+                        div { class: "row_menu",
+                            button {
+                                class: "menu_item",
+                                onclick: move |e| {
+                                    tools_open.set(false);
+                                    open_mods_folder(e);
+                                },
+                                "Open folder"
+                            }
+                            button {
+                                class: "menu_item",
+                                onclick: move |e| {
+                                    tools_open.set(false);
+                                    refresh(e);
+                                },
+                                "Refresh"
+                            }
+                            button {
+                                class: "menu_item",
+                                onclick: move |_| {
+                                    tools_open.set(false);
+                                    // The whole library (search filter ignored) in the current
+                                    // sort order, one name per line with its page url.
+                                    let mut list = mods();
+                                    sort_mods(&mut list, &sort_by());
+                                    let text = list
+                                        .iter()
+                                        .map(mod_list_line)
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    // Best-effort: no clipboard is not worth an error state.
+                                    let _ = arboard::Clipboard::new()
+                                        .and_then(|mut c| c.set_text(text));
+                                },
+                                "Copy mod list"
+                            }
+                        }
+                    }
                 }
             }
 
@@ -135,8 +171,14 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                 div { class: "empty_state",
                     div { class: "empty_icon", {crate::icons::package(40)} }
                     div { class: "empty_title", "No mods installed yet" }
-                    div { class: "empty_sub", "Grab a starter pack of hand-picked mods, or head to Browse to find your own." }
-                    button { class: "engage", onclick: move |_| show_starter.set(true), "Browse the starter pack" }
+                    div { class: "empty_sub",
+                        "Grab a starter pack of hand-picked mods, or head to Browse to find your own."
+                    }
+                    button {
+                        class: "engage",
+                        onclick: move |_| show_starter.set(true),
+                        "Browse the starter pack"
+                    }
                 }
             } else if !mods().is_empty() && filtered().is_empty() {
                 div { class: "mod_message", "No installed mods match your search." }
@@ -180,9 +222,17 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         }
 
         if show_starter() {
-            div { class: "starter_overlay", onclick: move |_| show_starter.set(false),
-                div { class: "starter_panel", onclick: move |e| e.stop_propagation(),
-                    button { class: "close", onclick: move |_| show_starter.set(false), "X" }
+            div {
+                class: "starter_overlay",
+                onclick: move |_| show_starter.set(false),
+                div {
+                    class: "starter_panel",
+                    onclick: move |e| e.stop_propagation(),
+                    button {
+                        class: "close",
+                        onclick: move |_| show_starter.set(false),
+                        "X"
+                    }
                     crate::starter_ui::StarterPack {
                         sd_root: sd_root.clone(),
                         on_close: {
@@ -279,13 +329,35 @@ fn highlight(text: &str, q: &str) -> Element {
         segs.push((text[pos..].to_string(), false));
     }
     rsx! {
-        for (seg, hit) in segs {
+        for (seg , hit) in segs {
             if hit {
                 mark { "{seg}" }
             } else {
                 "{seg}"
             }
         }
+    }
+}
+
+// Sort a scanned list by the My Mods sort key. Scan order is already name order, but re-sorting
+// on "name" too means switching back from another sort restores it.
+fn sort_mods(list: &mut Vec<InstalledMod>, key: &str) {
+    match key {
+        "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
+        "oldest" => list.sort_by_key(|m| m.installed_at),
+        _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+    }
+}
+
+// One clipboard line per mod: the display name, plus the mod-page url when one is constructable
+// from the recorded source.
+fn mod_list_line(m: &InstalledMod) -> String {
+    match m.source {
+        ModSource::GameBanana(id) => format!("{} (https://gamebanana.com/mods/{id})", m.name),
+        ModSource::Nexus(id) => {
+            format!("{} (https://www.nexusmods.com/fireemblemengage/mods/{id})", m.name)
+        }
+        ModSource::Manual => m.name.clone(),
     }
 }
 
@@ -296,6 +368,59 @@ fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
         ModSource::Nexus(_) => ("NexusMods", "chip nexus"),
         ModSource::Manual => ("User installed", "chip manual"),
     }
+}
+
+// Undo urlencoding_encode for one URL path segment (http's Uri::path() keeps percent-encoding, so
+// the handler decodes it itself). Strict: bad hex or invalid UTF-8 yields None → a 404, not a guess.
+fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = |c: &u8| (*c as char).to_digit(16).map(|d| d as u8);
+            out.push(hex(b.get(i + 1)?)? * 16 + hex(b.get(i + 2)?)?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+// Serves installed mods' saved preview images to the webview at /mod_thumb/<folder>/<file>.
+// Registered from Body — it's always mounted, while registering here in MyMods would tear the
+// protocol down on every tab switch. The handler runs synchronously on the main thread inside the
+// webview's scheme callback, in the registering component's scope, so reading the storage signals
+// is the same pattern as the nxm wry handler in main.rs. The install target is resolved per
+// request, so a mid-session sd_root switch just works. Anything unexpected answers 404 — never
+// panic in here, and never drop the responder (that would strand the request in the webview).
+pub(crate) fn use_thumb_protocol(installation_type: Signal<String>, sdcard_path: Signal<String>) {
+    use dioxus::desktop::wry::http::Response;
+    dioxus::desktop::use_asset_handler("mod_thumb", move |request, responder| {
+        let served = (|| {
+            let path = request.uri().path().to_string();
+            let mut segs = path.trim_start_matches('/').splitn(3, '/');
+            let (_name, folder, file) = (segs.next()?, segs.next()?, segs.next()?);
+            let folder = percent_decode(folder)?;
+            let file = percent_decode(file)?;
+            let sd = crate::resolve_sd_root(&installation_type(), &sdcard_path())?;
+            let full = install::thumb_file_path(&sd, &folder, &file)?;
+            let mime = match full.extension().and_then(|e| e.to_str()) {
+                Some("png") => "image/png",
+                Some("webp") => "image/webp",
+                Some("gif") => "image/gif",
+                _ => "image/jpeg",
+            };
+            let bytes = std::fs::read(&full).ok()?;
+            Response::builder().header("Content-Type", mime).body(bytes).ok()
+        })();
+        match served {
+            Some(resp) => responder.respond(resp),
+            None => responder.respond(Response::builder().status(404).body(Vec::new()).unwrap()),
+        }
+    });
 }
 
 
@@ -310,56 +435,192 @@ fn InstalledRow(
 ) -> Element {
     // Uninstall is destructive, so the button asks for a second click to confirm.
     let mut confirming = use_signal(|| false);
+    // The ⋯ menu holding the row's secondary actions.
+    let mut menu_open = use_signal(|| false);
+    // A long config description expands in place rather than staying clamped forever.
+    let mut desc_open = use_signal(|| false);
+    // The one bubble left in the rows: clicking a manually-installed mod's title explains where
+    // it came from, and it stays up until the next click anywhere. Dismissal is a one-shot
+    // document listener rather than an invisible catcher, so that click still does whatever it
+    // landed on (a catcher was tried — it swallowed the first outside click, which felt dead).
+    // GB rows have no tooltip at all — title and thumbnail open the details.
+    let mut show_origin = use_signal(|| false);
+    use_effect(move || {
+        if !show_origin() {
+            return;
+        }
+        spawn(async move {
+            // mousedown (capture) fires before the click reaches its target, and the handler
+            // removes itself either way. Registration happens after the opening click has fully
+            // finished, so the bubble can't dismiss itself on arrival.
+            let mut armed = document::eval(
+                "const h = () => { document.removeEventListener('mousedown', h, true); dioxus.send(true); };\n\
+                 document.addEventListener('mousedown', h, true);",
+            );
+            let _ = armed.recv::<bool>().await;
+            show_origin.set(false);
+        });
+    });
     let (chip_label, chip_class) = source_chip(&entry.source);
 
-    let do_uninstall = {
+    let reveal_label = crate::reveal_label();
+    let reveal = {
         let path = entry.path.clone();
-        let root = sd_root.clone();
         move |_| {
-            install::remove_installed_mod(&path);
-            mods.set(install::scan_installed_mods(&root));
+            menu_open.set(false);
+            let _ = crate::reveal_in_file_browser(&path);
         }
+    };
+
+    // Row art: the preview saved at install time, served through the mod_thumb protocol below. The
+    // folder name is percent-encoded (spaces, #, unicode would break the URL), and v= busts the
+    // webview's image cache when a reinstall replaces the folder.
+    let thumb_src = entry.thumb.as_ref().map(|file| {
+        let v = entry
+            .installed_at
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("/mod_thumb/{}/{file}?v={v}", crate::gamebanana::urlencoding_encode(&entry.folder))
+    });
+    // The tile is a second door to the same place as the GB title click; other sources' tiles
+    // stay inert (there's no details view to open for them).
+    let thumb_view = match entry.source {
+        ModSource::GameBanana(id) => Some(id),
+        _ => None,
     };
 
     rsx! {
         div { class: "installed_row",
+            div {
+                class: if thumb_view.is_some() { "installed_thumb clickable" } else { "installed_thumb" },
+                onclick: move |_| {
+                    if let Some(id) = thumb_view {
+                        on_view.call(id);
+                    }
+                },
+                if let Some(src) = thumb_src {
+                    // Cover-cropped to the tile, same treatment as the browse cards and download
+                    // rows. Odd-aspect art just crops — "it is what it is" (a contain-over-blur
+                    // letterbox was tried and rejected).
+                    img { src: "{src}", alt: "", loading: "lazy" }
+                } else {
+                    // Interim placeholder (final art TBD): the package glyph on a neutral tile.
+                    span { class: "thumb_placeholder", {crate::icons::package(18)} }
+                }
+            }
             div { class: "installed_info",
                 div { class: "installed_name_line",
-                    span { class: "installed_name", {highlight(&entry.name, &query)} }
-                    span { class: chip_class, "{chip_label}" }
-                    if !entry.has_config {
-                        span { class: "chip warn", "No config" }
+                    // A GameBanana mod's whole title links to its page, with the banana mark
+                    // riding tight after the text; other sources keep the plain name + chip.
+                    if let ModSource::GameBanana(gb_id) = entry.source {
+                        // Clicking the title opens the in-app detail panel (the old View);
+                        // the ⋯ menu holds the link out to the GameBanana site.
+                        span {
+                            class: "installed_name_group gb",
+                            onclick: move |_| on_view.call(gb_id),
+                            span { class: "installed_name", {highlight(&entry.name, &query)} }
+                            span { class: "src_mark gb" }
+                        }
+                    } else if matches!(entry.source, ModSource::Manual) {
+                        // The Fortune Telling card: origin unknown, the user put it here. A
+                        // click shows the bubble; the armed listener above closes it on the
+                        // next click anywhere without eating that click.
+                        span {
+                            class: "installed_name_group",
+                            onclick: move |_| show_origin.set(true),
+                            span { class: "installed_name", {highlight(&entry.name, &query)} }
+                            span { class: "src_mark fortune" }
+                            if show_origin() {
+                                span { class: "origin_tip", "You installed this mod manually." }
+                            }
+                        }
+                    } else {
+                        span { class: "installed_name", {highlight(&entry.name, &query)} }
+                        span { class: chip_class, "{chip_label}" }
                     }
                 }
-                div { class: "installed_meta",
-                    if let Some(author) = entry.author.clone() {
+                // A missing config takes the byline's place as plain text, not a chip. A mod
+                // with a config but no author gets no meta line at all.
+                if !entry.has_config {
+                    div { class: "installed_meta", "Mod has no config file" }
+                } else if let Some(author) = entry.author.clone() {
+                    div { class: "installed_meta",
                         "by "
                         {highlight(&author, &query)}
-                        if entry.size_bytes > 0 { " · " }
-                    }
-                    if entry.size_bytes > 0 {
-                        "{crate::gamebanana::format_filesize(entry.size_bytes)}"
                     }
                 }
                 if let Some(desc) = entry.description.clone() {
-                    p { class: "installed_desc", {highlight(&desc, &query)} }
+                    p {
+                        class: if desc_open() { "installed_desc expanded" } else { "installed_desc" },
+                        {highlight(&desc, &query)}
+                    }
+                    // Only descriptions that can plausibly overflow the 2-line clamp get the
+                    // toggle. Length is a heuristic, not a measurement: at very wide windows a
+                    // borderline text may expand to reveal little. One constant, tuned by eye.
+                    if desc.chars().count() > 160 || desc.contains('\n') {
+                        button {
+                            class: "ghost desc_toggle",
+                            onclick: move |_| desc_open.set(!desc_open()),
+                            if desc_open() { "Show less" } else { "Show more" }
+                        }
+                    }
                 }
             }
             div { class: "installed_row_actions",
-                // "View" opens the GameBanana detail panel in place. (Nexus rows get no View:
-                // its browser is disabled, and there's no Nexus detail panel to host yet.)
-                if let ModSource::GameBanana(id) = entry.source {
+                div { class: "row_menu_anchor",
                     button {
-                        class: "ghost",
-                        onclick: move |_| on_view.call(id),
-                        "View"
+                        class: "ghost kebab",
+                        title: "More actions",
+                        onclick: move |_| menu_open.set(!menu_open()),
+                        {crate::icons::dots(16)}
                     }
-                }
-                if confirming() {
-                    button { class: "danger", onclick: do_uninstall, "Confirm remove" }
-                    button { class: "ghost", onclick: move |_| confirming.set(false), "Cancel" }
-                } else {
-                    button { class: "danger_outline", onclick: move |_| confirming.set(true), "Uninstall" }
+                    if menu_open() {
+                        // Invisible click-catcher: any click outside the menu closes it.
+                        div {
+                            class: "menu_backdrop",
+                            onclick: move |_| {
+                                menu_open.set(false);
+                                confirming.set(false);
+                            },
+                        }
+                        div { class: "row_menu",
+                            // Out to the mod's page on the GameBanana site.
+                            if let ModSource::GameBanana(id) = entry.source {
+                                a {
+                                    class: "menu_item",
+                                    href: "https://gamebanana.com/mods/{id}",
+                                    onclick: move |_| menu_open.set(false),
+                                    "Open on GameBanana"
+                                }
+                            }
+                            button { class: "menu_item", onclick: reveal, "{reveal_label}" }
+                            // Delete confirms in place: the same row re-arms as "Confirm delete",
+                            // so nothing jumps under the cursor. Clicking outside disarms.
+                            if confirming() {
+                                button {
+                                    class: "menu_item danger_item armed",
+                                    onclick: {
+                                        let path = entry.path.clone();
+                                        let root = sd_root.clone();
+                                        move |_| {
+                                            menu_open.set(false);
+                                            confirming.set(false);
+                                            install::remove_installed_mod(&path);
+                                            mods.set(install::scan_installed_mods(&root));
+                                        }
+                                    },
+                                    "Confirm delete"
+                                }
+                            } else {
+                                button {
+                                    class: "menu_item danger_item",
+                                    onclick: move |_| confirming.set(true),
+                                    "Delete"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

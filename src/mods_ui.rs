@@ -452,6 +452,7 @@ pub(crate) fn DetailSkeleton() -> Element {
     rsx! {
         div { class: "detail_skeleton",
             div { class: "skeleton_line title" }
+            div { class: "skeleton_line subtitle" }
             div { class: "skeleton_line meta" }
             div { class: "skeleton_screens",
                 div { class: "skeleton_box shot" }

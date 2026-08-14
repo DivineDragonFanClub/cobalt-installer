@@ -70,13 +70,7 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                     || m.description.as_deref().unwrap_or("").to_lowercase().contains(&q)
             });
         }
-        match sort_by().as_str() {
-            "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
-            "oldest" => list.sort_by_key(|m| m.installed_at),
-            // scan_installed_mods already returns name order; re-sort anyway
-            // so switching back from another sort restores it
-            _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-        }
+        sort_mods(&mut list, &sort_by());
         list
     });
 
@@ -140,6 +134,25 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                                     refresh(e);
                                 },
                                 "Refresh"
+                            }
+                            button {
+                                class: "menu_item",
+                                onclick: move |_| {
+                                    tools_open.set(false);
+                                    // The whole library (search filter ignored) in the current
+                                    // sort order, one name per line with its page url.
+                                    let mut list = mods();
+                                    sort_mods(&mut list, &sort_by());
+                                    let text = list
+                                        .iter()
+                                        .map(mod_list_line)
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
+                                    // Best-effort: no clipboard is not worth an error state.
+                                    let _ = arboard::Clipboard::new()
+                                        .and_then(|mut c| c.set_text(text));
+                                },
+                                "Copy mod list"
                             }
                         }
                     }
@@ -326,6 +339,28 @@ fn highlight(text: &str, q: &str) -> Element {
     }
 }
 
+// Sort a scanned list by the My Mods sort key. Scan order is already name order, but re-sorting
+// on "name" too means switching back from another sort restores it.
+fn sort_mods(list: &mut Vec<InstalledMod>, key: &str) {
+    match key {
+        "recent" => list.sort_by_key(|m| std::cmp::Reverse(m.installed_at)),
+        "oldest" => list.sort_by_key(|m| m.installed_at),
+        _ => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+    }
+}
+
+// One clipboard line per mod: the display name, plus the mod-page url when one is constructable
+// from the recorded source.
+fn mod_list_line(m: &InstalledMod) -> String {
+    match m.source {
+        ModSource::GameBanana(id) => format!("{} (https://gamebanana.com/mods/{id})", m.name),
+        ModSource::Nexus(id) => {
+            format!("{} (https://www.nexusmods.com/fireemblemengage/mods/{id})", m.name)
+        }
+        ModSource::Manual => m.name.clone(),
+    }
+}
+
 // Human label + css class for the source chip.
 fn source_chip(source: &ModSource) -> (&'static str, &'static str) {
     match source {
@@ -404,18 +439,28 @@ fn InstalledRow(
     let mut menu_open = use_signal(|| false);
     // A long config description expands in place rather than staying clamped forever.
     let mut desc_open = use_signal(|| false);
-    // The title bubble: hover shows it after a beat (tooltip-style, not instant),
-    // leaving hides and cancels a pending show, and on manual rows a click shows it
-    // immediately and pins it for 1.8s.
+    // The one bubble left in the rows: clicking a manually-installed mod's title explains where
+    // it came from, and it stays up until the next click anywhere. Dismissal is a one-shot
+    // document listener rather than an invisible catcher, so that click still does whatever it
+    // landed on (a catcher was tried — it swallowed the first outside click, which felt dead).
+    // GB rows have no tooltip at all — title and thumbnail open the details.
     let mut show_origin = use_signal(|| false);
-    let mut show_delay = dioxus_sdk::time::use_debounce(
-        std::time::Duration::from_millis(450),
-        move |_| show_origin.set(true),
-    );
-    let mut hide_origin = dioxus_sdk::time::use_debounce(
-        std::time::Duration::from_millis(1800),
-        move |_| show_origin.set(false),
-    );
+    use_effect(move || {
+        if !show_origin() {
+            return;
+        }
+        spawn(async move {
+            // mousedown (capture) fires before the click reaches its target, and the handler
+            // removes itself either way. Registration happens after the opening click has fully
+            // finished, so the bubble can't dismiss itself on arrival.
+            let mut armed = document::eval(
+                "const h = () => { document.removeEventListener('mousedown', h, true); dioxus.send(true); };\n\
+                 document.addEventListener('mousedown', h, true);",
+            );
+            let _ = armed.recv::<bool>().await;
+            show_origin.set(false);
+        });
+    });
     let (chip_label, chip_class) = source_chip(&entry.source);
 
     let reveal_label = crate::reveal_label();
@@ -438,10 +483,22 @@ fn InstalledRow(
             .unwrap_or(0);
         format!("/mod_thumb/{}/{file}?v={v}", crate::gamebanana::urlencoding_encode(&entry.folder))
     });
+    // The tile is a second door to the same place as the GB title click; other sources' tiles
+    // stay inert (there's no details view to open for them).
+    let thumb_view = match entry.source {
+        ModSource::GameBanana(id) => Some(id),
+        _ => None,
+    };
 
     rsx! {
         div { class: "installed_row",
-            div { class: "installed_thumb",
+            div {
+                class: if thumb_view.is_some() { "installed_thumb clickable" } else { "installed_thumb" },
+                onclick: move |_| {
+                    if let Some(id) = thumb_view {
+                        on_view.call(id);
+                    }
+                },
                 if let Some(src) = thumb_src {
                     // Cover-cropped to the tile, same treatment as the browse cards and download
                     // rows. Odd-aspect art just crops — "it is what it is" (a contain-over-blur
@@ -461,34 +518,17 @@ fn InstalledRow(
                         // the ⋯ menu holds the link out to the GameBanana site.
                         span {
                             class: "installed_name_group gb",
-                            onmouseenter: move |_| show_delay.action(()),
-                            onmouseleave: move |_| {
-                                show_delay.cancel();
-                                show_origin.set(false);
-                            },
                             onclick: move |_| on_view.call(gb_id),
                             span { class: "installed_name", {highlight(&entry.name, &query)} }
                             span { class: "src_mark gb" }
-                            if show_origin() {
-                                span { class: "origin_tip", "View mod details" }
-                            }
                         }
                     } else if matches!(entry.source, ModSource::Manual) {
-                        // The Fortune Telling card: origin unknown, the user put it here. Same
-                        // shape and bubble as the GameBanana title link; hover shows it, and a
-                        // click pins it for a beat (useful mid-scroll and on touchpads).
+                        // The Fortune Telling card: origin unknown, the user put it here. A
+                        // click shows the bubble; the armed listener above closes it on the
+                        // next click anywhere without eating that click.
                         span {
                             class: "installed_name_group",
-                            onmouseenter: move |_| show_delay.action(()),
-                            onmouseleave: move |_| {
-                                show_delay.cancel();
-                                show_origin.set(false);
-                            },
-                            onclick: move |_| {
-                                show_delay.cancel();
-                                show_origin.set(true);
-                                hide_origin.action(());
-                            },
+                            onclick: move |_| show_origin.set(true),
                             span { class: "installed_name", {highlight(&entry.name, &query)} }
                             span { class: "src_mark fortune" }
                             if show_origin() {

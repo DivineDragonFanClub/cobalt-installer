@@ -2209,8 +2209,8 @@ button.ghost.desc_toggle:active:enabled {
     align-items: center;
 }
 .download_thumb {
-    width: 144px;
-    height: 81px;
+    width: 168px;
+    height: 95px;
     flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
@@ -2228,18 +2228,15 @@ button.ghost.desc_toggle:active:enabled {
    for GameBanana's landscape renders it looked identical, and odd shapes can just crop.) */
 .installed_thumb {
     position: relative;
-    width: 144px; /* matches .download_thumb so the live rows above stay column-aligned */
+    width: 168px; /* matches .download_thumb so the live rows above stay column-aligned */
     aspect-ratio: 16 / 9;
     flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
     background: var(--bg);
-    /* Top-anchored with a small optical inset: a Show more expansion then grows the row
-       downward under the art instead of re-centering it (centered was tried — the tile slid
-       on every toggle). Stretch-to-row-height was also tried and rejected: placeholder rows
-       became heavy dark slabs. */
-    align-self: flex-start;
-    margin-top: 3px;
+    /* Centered on the row's cross axis. (Stretch-to-row-height was tried and rejected:
+       placeholder rows became heavy dark slabs.) */
+    align-self: center;
 }
 .installed_thumb.clickable {
     cursor: pointer;

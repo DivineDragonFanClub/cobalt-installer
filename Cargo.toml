@@ -1,5 +1,5 @@
 [package]
-name = "CobaltInstaller"
+name = "CobaltManager"
 version = "2.3.0"
 authors = ["DogeThis <thedogethis@gmail.com>"]
 edition = "2021"
@@ -47,6 +47,11 @@ release-hub = { git = "https://github.com/DivineDragonFanClub/release-hub", rev 
 # reqwest (ring) and release-hub's stack (aws-lc-rs) both enable a rustls crypto provider, so rustls
 # can't auto-pick one. We install a process-default provider in main() before any TLS use.
 rustls = "0.23"
+
+# Windows-only. Read the Add/Remove Programs entries so a freshly-updated build can find and
+# silently uninstall the old differently-named "Cobalt Installer" install left behind by the rename.
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.52"
 
 # Android-only native plumbing. `jni`/`ndk-context` bridge into MainActivity.kt,
 # `futures-timer` gives us an await-able delay for polling the folder grant.

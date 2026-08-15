@@ -31,7 +31,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 echo "==> dx build --release (release Rust + generated gradle project)"
 dx build --release --platform android --target aarch64-linux-android "$@"
 
-GEN=target/dx/CobaltInstaller/release/android/app
+GEN=target/dx/CobaltManager/release/android/app
 RES=$GEN/app/src/main/res
 ICONS=android/icons
 

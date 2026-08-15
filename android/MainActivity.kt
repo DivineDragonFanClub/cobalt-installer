@@ -33,7 +33,7 @@ object BuildConfig {
 }
 
 /*
- * Android side of the Cobalt installer.
+ * Android side of Cobalt Manager.
  *
  * The Rust UI (src/main.rs, the `saf` module) calls the four public methods here over
  * JNI. Everything that touches Eden's folder happens here, through the Storage Access

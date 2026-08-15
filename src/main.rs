@@ -285,17 +285,22 @@ fn main() {
         // rustls can't auto-pick one and panics on first TLS use. Install a process default up front.
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+        // If this build just replaced an old "Cobalt Installer" (pre-rebrand) install, that old one
+        // is left behind in Add/Remove Programs. Silently uninstall it. No-ops once it's gone.
+        #[cfg(target_os = "windows")]
+        updater::cleanup_previous_install();
+
         dioxus_sdk::storage::set_dir!();
         // Open at a 16:9 size, and keep a 16:9 floor so the layout never gets squished.
         let window = WindowBuilder::new()
-            .with_title("Cobalt Installer")
+            .with_title("Cobalt Manager")
             .with_inner_size(LogicalSize::new(1280.0, 720.0))
             .with_min_inner_size(LogicalSize::new(960.0, 540.0));
         LaunchBuilder::new()
             .with_cfg(
                 dioxus_desktop::Config::new()
                     .with_window(window)
-                    .with_data_directory(dirs::data_local_dir().unwrap().join("CobaltInstaller")),
+                    .with_data_directory(dirs::data_local_dir().unwrap().join("CobaltManager")),
             )
             .launch(App);
     }
@@ -309,7 +314,7 @@ const RELEASE_URL: &str = "https://github.com/Raytwo/Cobalt/releases/latest/down
 // This installer's own repo, for the self-update checks (desktop uses release-hub; Android hits the
 // releases API directly since release-hub is desktop-only). Only read from the Android check.
 #[allow(dead_code)]
-const INSTALLER_REPO: &str = "DivineDragonFanClub/cobalt-installer";
+const INSTALLER_REPO: &str = "DivineDragonFanClub/cobalt-manager";
 
 // Compare two dotted version strings, returning true if `latest` is strictly newer than `current`.
 // Numeric per-component compare, missing components count as 0, and any `-prerelease` suffix is
@@ -348,7 +353,7 @@ async fn check_android_update() -> Option<(String, String)> {
         html_url: String,
     }
     let client = reqwest::Client::builder()
-        .user_agent(concat!("CobaltInstaller/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("CobaltManager/", env!("CARGO_PKG_VERSION")))
         .build()
         .ok()?;
     let release: Release = client
@@ -957,7 +962,7 @@ fn App() -> Element {
     // over HTTP. Never compiled into release builds.
     #[cfg(all(feature = "desktop", debug_assertions))]
     use_hook(|| {
-        let mut eval_rx = dioxus_inspector::start_bridge(9223, "CobaltInstaller");
+        let mut eval_rx = dioxus_inspector::start_bridge(9223, "CobaltManager");
         spawn(async move {
             while let Some(cmd) = eval_rx.recv().await {
                 let result = document::eval(&cmd.script).await;
@@ -1127,7 +1132,7 @@ pub fn Hero() -> Element {
                         },
                     }
                     div { class: "app_header_text",
-                        h1 { "Cobalt Installer" }
+                        h1 { "Cobalt Manager" }
                         p { class: "app_tagline", "Mods for Fire Emblem Engage" }
                     }
                 }
@@ -1151,7 +1156,7 @@ pub fn Hero() -> Element {
     }
 }
 
-// The tabs: the Cobalt installer, plus the mod browser + My Mods (both locked until Cobalt is
+// The tabs: the Cobalt install tab, plus the mod browser + My Mods (both locked until Cobalt is
 // installed). Shared by the desktop and Android bodies. Storybook is a desktop debug-only extra.
 #[cfg(any(feature = "desktop", target_os = "android"))]
 #[derive(Clone, Copy, PartialEq)]
@@ -1314,7 +1319,7 @@ fn Body(status_message: Signal<String>) -> Element {
                             },
                         }
                         div { class: "sidebar_brand_text",
-                            span { class: "sidebar_title", "Cobalt Installer" }
+                            span { class: "sidebar_title", "Cobalt Manager" }
                             span { class: "sidebar_tagline", "Mods for Fire Emblem Engage" }
                         }
                     }
@@ -1544,7 +1549,7 @@ fn UpdateBanner() -> Element {
                     if let Some(msg) = update_status() {
                         "{msg}"
                     } else {
-                        "Cobalt Installer {update.version} is available."
+                        "Cobalt Manager {update.version} is available."
                     }
                 }
                 if update_status().is_none() {
@@ -1605,7 +1610,7 @@ fn Body(status_message: Signal<String>) -> Element {
     rsx! {
         if let Some((tag, url)) = update() {
             div { class: "nxm_banner update_banner",
-                span { "Cobalt Installer {tag} is available." }
+                span { "Cobalt Manager {tag} is available." }
                 button {
                     class: "primary",
                     onclick: move |_| {

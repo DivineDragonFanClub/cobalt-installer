@@ -49,7 +49,7 @@ jobs:
           # bump our own package entry in the lockfile too (the version line right after its name),
           # so the first cargo run in the build jobs doesn't have to rewrite Cargo.lock
           awk -v v="$ver" '
-            /^name = "CobaltInstaller"$/ { print; getline; sub(/^version = ".*"/, "version = \"" v "\""); print; next }
+            /^name = "CobaltManager"$/ { print; getline; sub(/^version = ".*"/, "version = \"" v "\""); print; next }
             { print }
           ' Cargo.lock > Cargo.lock.tmp && mv Cargo.lock.tmp Cargo.lock
           git config user.name "github-actions[bot]"
@@ -90,7 +90,7 @@ jobs:
           $exe = Get-ChildItem -Path out-bundle -Recurse -Filter *.exe | Select-Object -First 1
           if (-not $exe) { throw "NSIS installer not found under out-bundle" }
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item $exe.FullName "out/CobaltInstaller-windows-x86_64.exe"
+          Copy-Item $exe.FullName "out/CobaltManager-windows-x86_64.exe"
 
       - name: Check for minisign secret
         shell: bash
@@ -114,7 +114,7 @@ jobs:
           Expand-Archive minisign.zip -DestinationPath minisign-bin -Force
           $minisign = (Get-ChildItem -Path minisign-bin -Recurse -Filter minisign.exe | Select-Object -First 1).FullName
           [IO.File]::WriteAllText("minisign.key", $env:MINISIGN_SECRET_KEY.TrimEnd() + "`n")
-          & $minisign -S -s minisign.key -m out/CobaltInstaller-windows-x86_64.exe
+          & $minisign -S -s minisign.key -m out/CobaltManager-windows-x86_64.exe
           if ($LASTEXITCODE -ne 0) { throw "minisign signing failed" }
           Remove-Item minisign.key
           Get-ChildItem out
@@ -335,8 +335,8 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p out
-          cp target/dx/CobaltInstaller/release/android/app/app/build/outputs/apk/release/app-release.apk \
-             out/CobaltInstaller-android.apk
+          cp target/dx/CobaltManager/release/android/app/app/build/outputs/apk/release/app-release.apk \
+             out/CobaltManager-android.apk
 
       - name: Upload to release
         uses: softprops/action-gh-release@v3

@@ -464,6 +464,11 @@ button.engage::before {
         background-image: var(--hero-sprite-dark);
     }
 }
+/* Anna's axe-raised pose is 29px tall vs Alear's 27: a taller box keeps the
+   same exact 2× pixel scale on the starter pack's install button */
+.starter button.engage::before {
+    height: 58px;
+}
 [data-theme="dark"] button.engage::before {
     background-image: var(--hero-sprite-dark);
 }

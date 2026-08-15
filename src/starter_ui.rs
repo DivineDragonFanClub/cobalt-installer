@@ -84,8 +84,12 @@ pub fn StarterPack(sd_root: PathBuf, on_close: EventHandler<()>) -> Element {
     // The mod whose detail overlay is open, if any.
     let mut detail_open = use_signal(|| None::<u64>);
 
+    let anna = crate::SPRITE_ANNA;
     rsx! {
         div { class: "starter",
+            // Anna rides the pack's Install button via the same per-view sprite vars the hero
+            // button uses (see button.engage::before). She has no dark-theme form.
+            style: "--hero-sprite-light: url('{anna}'); --hero-sprite-dark: url('{anna}')",
             div { class: "starter_head",
                 h2 { "Start with a few mods" }
                 p { class: "starter_sub",

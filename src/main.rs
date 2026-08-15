@@ -45,6 +45,10 @@ pub(crate) const SPRITE_LUEUR_PROMO: Asset = asset!("/assets/sprite_lueur_promo.
 pub(crate) const SPRITE_LUEUR_F_PROMO: Asset = asset!("/assets/sprite_lueur_f_promo.png");
 pub(crate) const SPRITE_FELL: Asset = asset!("/assets/sprite_fell.png");
 pub(crate) const SPRITE_FELL_F: Asset = asset!("/assets/sprite_fell_f.png");
+// Anna in her default Axe Fighter class, standing on the starter pack's install
+// button — the merchant selling newcomers their first mods. No Fell form, so
+// both theme slots get the same sprite.
+pub(crate) const SPRITE_ANNA: Asset = asset!("/assets/sprite_anna.png");
 
 // The Discord mark (filled). Lives here rather than the desktop-only icons
 // module because the footer link is shared with the Android build.

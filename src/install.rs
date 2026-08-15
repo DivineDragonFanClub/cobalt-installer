@@ -8,12 +8,12 @@
 // author, and a record of where the mod came from (for its own auto-update later).
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{Cursor, Read};
 
 use serde::{Deserialize, Serialize};
 
 use crate::gamebanana::ModDetail;
+use crate::storage::ModStore;
 
 // Mirrors Cobalt's own config.yaml shape (see ozone crates/mods/src/manager.rs). We only ever
 // write the fields we can fill, but the names and layout have to match exactly or Cobalt won't read
@@ -67,31 +67,21 @@ struct InstalledConfig {
     update_sources: Vec<UpdateSource>,
 }
 
-fn mods_dir(sd_root: &Path) -> PathBuf {
-    sd_root.join("engage").join("mods")
-}
-
-// Scan the mods folder and map each installed GameBanana mod id to its folder. Powers the
-// "Installed" badge and lets us replace a mod in place when the user reinstalls or updates it.
-pub fn installed_gamebanana_ids(sd_root: &Path) -> HashMap<u64, PathBuf> {
+// Scan the mods folder and map each installed GameBanana mod id to its folder name. Powers the
+// "Installed" badge and lets us replace a mod in place when the user reinstalls or updates it. Our
+// own installs are always folders, so we only look at folder mods here.
+pub fn installed_gamebanana_ids(store: &ModStore) -> HashMap<u64, String> {
     let mut map = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(mods_dir(sd_root)) else {
-        return map;
-    };
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
+    for entry in store.list() {
+        if !entry.is_dir {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(dir.join("config.yaml")) else {
-            continue;
-        };
-        let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else {
+        let Some(config) = read_folder_config(store, &entry.name) else {
             continue;
         };
         for source in config.update_sources {
             if let UpdateSource::GameBanana { item_id, .. } = source {
-                map.insert(item_id, dir.clone());
+                map.insert(item_id, entry.name.clone());
             }
         }
     }
@@ -99,28 +89,21 @@ pub fn installed_gamebanana_ids(sd_root: &Path) -> HashMap<u64, PathBuf> {
 }
 
 // Remove an installed GameBanana mod by its id. Returns whether a folder was actually deleted.
-pub fn uninstall_gamebanana_mod(sd_root: &Path, item_id: u64) -> bool {
-    match installed_gamebanana_ids(sd_root).get(&item_id) {
-        Some(dir) => std::fs::remove_dir_all(dir).is_ok(),
+pub fn uninstall_gamebanana_mod(store: &ModStore, item_id: u64) -> bool {
+    match installed_gamebanana_ids(store).get(&item_id) {
+        Some(folder) => store.remove(folder),
         None => false,
     }
 }
 
 // Same idea as installed_gamebanana_ids, but for Nexus mods (found by the "nexus.<id>" config id).
-pub fn installed_nexus_ids(sd_root: &Path) -> HashMap<u64, PathBuf> {
+pub fn installed_nexus_ids(store: &ModStore) -> HashMap<u64, String> {
     let mut map = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(mods_dir(sd_root)) else {
-        return map;
-    };
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
+    for entry in store.list() {
+        if !entry.is_dir {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(dir.join("config.yaml")) else {
-            continue;
-        };
-        let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else {
+        let Some(config) = read_folder_config(store, &entry.name) else {
             continue;
         };
         let id = config
@@ -129,10 +112,16 @@ pub fn installed_nexus_ids(sd_root: &Path) -> HashMap<u64, PathBuf> {
             .and_then(|n| n.parse::<u64>().ok())
             .or_else(|| nexus_id_from_url(&config.source_url));
         if let Some(id) = id {
-            map.insert(id, dir.clone());
+            map.insert(id, entry.name.clone());
         }
     }
     map
+}
+
+// Read + parse a folder mod's config.yaml through the store. None when absent or unparseable.
+fn read_folder_config(store: &ModStore, folder: &str) -> Option<InstalledConfig> {
+    let text = String::from_utf8(store.read(&format!("{folder}/config.yaml"))?).ok()?;
+    serde_yaml::from_str::<InstalledConfig>(&text).ok()
 }
 
 // Pull the mod id out of a NexusMods page url ("https://www.nexusmods.com/fireemblemengage/
@@ -146,9 +135,9 @@ fn nexus_id_from_url(url: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-pub fn uninstall_nexus_mod(sd_root: &Path, mod_id: u64) -> bool {
-    match installed_nexus_ids(sd_root).get(&mod_id) {
-        Some(dir) => std::fs::remove_dir_all(dir).is_ok(),
+pub fn uninstall_nexus_mod(store: &ModStore, mod_id: u64) -> bool {
+    match installed_nexus_ids(store).get(&mod_id) {
+        Some(folder) => store.remove(folder),
         None => false,
     }
 }
@@ -182,8 +171,8 @@ pub struct InstalledMod {
     // File name of the preview image saved at install time ("thumbnail.jpg"), when the folder has
     // one. Feeds the row art through the mod_thumb protocol. Zip mods have nowhere to keep one.
     pub thumb: Option<String>,
-    // Full path to the mod folder (or .zip), for opening in the file browser and uninstalling.
-    pub path: PathBuf,
+    // Whether this entry is a folder mod (vs a hand-dropped <Name>.zip). Uninstall/reveal need it.
+    pub is_dir: bool,
 }
 
 // Read one config's fields into a source tag. Prefer an explicit gamebanana update_source, then fall
@@ -210,11 +199,11 @@ fn classify_source(config: &InstalledConfig) -> ModSource {
 //
 // Same shallowest-marker rule as root_prefix: a re-zipped mod can bury its config under a wrapper
 // folder, and a config nested deeper (a bundled sub-mod) must not win over the real one above it.
-fn zip_config(path: &Path) -> Option<InstalledConfig> {
+fn zip_config(bytes: &[u8]) -> Option<InstalledConfig> {
     // A config.yaml is a handful of lines. Anything past this isn't one, so don't spend the memory.
     const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
-    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
 
     let mut best: Option<(usize, String)> = None;
     for name in archive.file_names() {
@@ -250,29 +239,23 @@ fn zip_config(path: &Path) -> Option<InstalledConfig> {
 
 // List everything currently installed under engage/mods, config or not. Cobalt loads both folder
 // mods and <Name>.zip mods, so we show both. Sorted by display name so the list is stable.
-pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
+pub fn scan_installed_mods(store: &ModStore) -> Vec<InstalledMod> {
     let mut mods = Vec::new();
-    let Ok(entries) = std::fs::read_dir(mods_dir(sd_root)) else {
-        return mods;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_dir = path.is_dir();
-        let is_zip = path.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false);
+    for entry in store.list() {
+        let is_dir = entry.is_dir;
+        let is_zip = !is_dir && entry.name.to_lowercase().ends_with(".zip");
         // Skip stray files that aren't a mod folder or a zipped mod.
         if !is_dir && !is_zip {
             continue;
         }
-        let folder = entry.file_name().to_string_lossy().to_string();
+        let folder = entry.name.clone();
 
         // A folder mod keeps its config.yaml on disk, a zipped mod keeps it inside the archive.
         // Either way we read just that one file, so a zip is never unpacked to list it.
         let config = if is_dir {
-            std::fs::read_to_string(path.join("config.yaml"))
-                .ok()
-                .and_then(|text| serde_yaml::from_str::<InstalledConfig>(&text).ok())
+            read_folder_config(store, &folder)
         } else {
-            zip_config(&path)
+            store.read(&folder).and_then(|bytes| zip_config(&bytes))
         };
 
         let (name, author, description, source) = match &config {
@@ -285,17 +268,13 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             None => (folder.clone(), None, None, ModSource::Manual),
         };
 
-        let installed_at = std::fs::metadata(&path)
-            .ok()
-            .and_then(|md| md.created().or_else(|_| md.modified()).ok());
-
         // The preview image saved at install time, if any.
         let thumb = is_dir
             .then(|| {
                 THUMB_EXTS
                     .iter()
                     .map(|e| format!("thumbnail.{e}"))
-                    .find(|n| path.join(n).is_file())
+                    .find(|n| store.exists(&format!("{folder}/{n}")))
             })
             .flatten();
 
@@ -305,23 +284,19 @@ pub fn scan_installed_mods(sd_root: &Path) -> Vec<InstalledMod> {
             author,
             description,
             source,
-            installed_at,
+            installed_at: entry.modified,
             has_config: config.is_some(),
             thumb,
-            path,
+            is_dir,
         });
     }
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     mods
 }
 
-// Delete an installed mod by its path (a folder or a .zip). Returns whether it was removed.
-pub fn remove_installed_mod(path: &Path) -> bool {
-    if path.is_dir() {
-        std::fs::remove_dir_all(path).is_ok()
-    } else {
-        std::fs::remove_file(path).is_ok()
-    }
+// Delete an installed mod by its folder name (a folder or a .zip). Returns whether it was removed.
+pub fn remove_installed_mod(store: &ModStore, folder: &str) -> bool {
+    store.remove(folder)
 }
 
 #[derive(Debug)]
@@ -354,17 +329,17 @@ pub struct NexusMeta {
     pub source_url: String,
 }
 
-// Extract a downloaded mod .zip into engage/mods/<folder>/, un-nesting a wrapper folder if there is
-// one. Returns the install folder and whether the archive already carried its own config.yaml.
-fn extract_archive(sd_root: &Path, folder: &str, bytes: &[u8]) -> Result<(PathBuf, bool), InstallError> {
+// Un-nest a downloaded mod .zip into a flat list of (relative path, bytes), stripping any wrapper
+// folder so patches/ and Data/ land at the mod root. Pure and platform-neutral (no disk): the caller
+// writes the files through the store. Also reports whether the archive already carried a config.yaml.
+// Directory entries are dropped — the store creates parents when it writes a file.
+fn extract_to_memory(bytes: &[u8]) -> Result<(Vec<(String, Vec<u8>)>, bool), InstallError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| InstallError::NotAZip)?;
 
     let names: Vec<String> = archive.file_names().map(String::from).collect();
     let prefix = root_prefix(&names);
 
-    let dest = mods_dir(sd_root).join(folder);
-    std::fs::create_dir_all(&dest).map_err(|e| InstallError::Io(e.to_string()))?;
-
+    let mut files = Vec::new();
     let mut saw_config = false;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| InstallError::BadArchive(e.to_string()))?;
@@ -383,36 +358,28 @@ fn extract_archive(sd_root: &Path, folder: &str, bytes: &[u8]) -> Result<(PathBu
             _ if prefix.is_empty() => name.clone(),
             _ => continue,
         };
-        if rel.is_empty() {
+        if rel.is_empty() || file.is_dir() {
             continue;
         }
         if rel == "config.yaml" {
             saw_config = true;
         }
 
-        let out = dest.join(&rel);
-        if file.is_dir() {
-            std::fs::create_dir_all(&out).map_err(|e| InstallError::Io(e.to_string()))?;
-            continue;
-        }
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| InstallError::Io(e.to_string()))?;
-        }
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).map_err(|e| InstallError::Io(e.to_string()))?;
-        std::fs::File::create(&out)
-            .and_then(|mut f| f.write_all(&buf))
-            .map_err(|e| InstallError::Io(e.to_string()))?;
+        files.push((rel, buf));
     }
 
-    Ok((dest, saw_config))
+    Ok((files, saw_config))
 }
 
 // Write a generated config.yaml, but only after checking it re-parses (a broken one crashes the game).
-fn write_config(dest: &Path, config: &ModConfig) -> Result<(), InstallError> {
+fn write_config(store: &ModStore, folder: &str, config: &ModConfig) -> Result<(), InstallError> {
     let yaml = serde_yaml::to_string(config).map_err(|e| InstallError::Config(e.to_string()))?;
     serde_yaml::from_str::<serde_yaml::Value>(&yaml).map_err(|e| InstallError::Config(e.to_string()))?;
-    std::fs::write(dest.join("config.yaml"), yaml).map_err(|e| InstallError::Config(e.to_string()))
+    store
+        .write(&format!("{folder}/config.yaml"), yaml.as_bytes())
+        .map_err(|e| InstallError::Config(e.0))
 }
 
 // A mod that ships its own config.yaml usually doesn't record where it came from, which loses the
@@ -421,9 +388,9 @@ fn write_config(dest: &Path, config: &ModConfig) -> Result<(), InstallError> {
 // can't fully parse (including update_sources entries we don't recognize) is left byte-for-byte
 // alone — a malformed config.yaml panics the game at boot — and we only save YAML that re-parses.
 // The round-trip does drop YAML comments; that's the one cost of stamping.
-fn ensure_gamebanana_source(dest: &Path, item_id: u64) {
-    let path = dest.join("config.yaml");
-    let Ok(text) = std::fs::read_to_string(&path) else { return };
+fn ensure_gamebanana_source(store: &ModStore, folder: &str, item_id: u64) {
+    let rel = format!("{folder}/config.yaml");
+    let Some(text) = store.read(&rel).and_then(|b| String::from_utf8(b).ok()) else { return };
     let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else { return };
     // The modder already declared a GameBanana origin (even a different id): theirs wins.
     if config.update_sources.iter().any(|s| matches!(s, UpdateSource::GameBanana { .. })) {
@@ -450,7 +417,7 @@ fn ensure_gamebanana_source(dest: &Path, item_id: u64) {
 
     let Ok(yaml) = serde_yaml::to_string(&value) else { return };
     if serde_yaml::from_str::<InstalledConfig>(&yaml).is_ok() {
-        let _ = std::fs::write(&path, yaml);
+        let _ = store.write(&rel, yaml.as_bytes());
     }
 }
 
@@ -459,12 +426,12 @@ fn ensure_gamebanana_source(dest: &Path, item_id: u64) {
 // depends on it — so the only safe place for provenance is source_url, and only when the modder
 // left it empty. A config with its own source_url (a plugin's repo, say) stays untouched and the
 // mod stays classified Manual; honest, if imperfect.
-fn ensure_nexus_source(dest: &Path, meta: &NexusMeta) {
+fn ensure_nexus_source(store: &ModStore, folder: &str, meta: &NexusMeta) {
     if meta.source_url.is_empty() {
         return;
     }
-    let path = dest.join("config.yaml");
-    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let rel = format!("{folder}/config.yaml");
+    let Some(text) = store.read(&rel).and_then(|b| String::from_utf8(b).ok()) else { return };
     let Ok(config) = serde_yaml::from_str::<InstalledConfig>(&text) else { return };
     if config.id.starts_with("nexus.") || !config.source_url.is_empty() {
         return;
@@ -479,7 +446,7 @@ fn ensure_nexus_source(dest: &Path, meta: &NexusMeta) {
 
     let Ok(yaml) = serde_yaml::to_string(&value) else { return };
     if serde_yaml::from_str::<InstalledConfig>(&yaml).is_ok() {
-        let _ = std::fs::write(&path, yaml);
+        let _ = store.write(&rel, yaml.as_bytes());
     }
 }
 
@@ -491,41 +458,47 @@ pub(crate) const THUMB_EXTS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "gif"];
 // the config stamping above: nothing in the thumbnail path may ever fail an install (an Err would
 // roll back the whole batch in install_transactional, over a decoration). Leftovers under another
 // extension are cleared first so a re-install that changes format can't leave two behind.
-pub fn write_thumbnail(dest: &Path, bytes: &[u8], ext: &str) {
+pub fn write_thumbnail(store: &ModStore, folder: &str, bytes: &[u8], ext: &str) {
     let ext = if THUMB_EXTS.contains(&ext) { ext } else { "jpg" };
     for e in THUMB_EXTS {
         if e != ext {
-            let _ = std::fs::remove_file(dest.join(format!("thumbnail.{e}")));
+            let _ = store.remove(&format!("{folder}/thumbnail.{e}"));
         }
     }
-    let _ = std::fs::write(dest.join(format!("thumbnail.{ext}")), bytes);
+    let _ = store.write(&format!("{folder}/thumbnail.{ext}"), bytes);
 }
 
-// Resolve a webview /mod_thumb request to a real file, or None. `folder` and `file` arrive
-// percent-decoded from the URL. The checks make traversal unreachable: folder must be a plain
+// Read a mod's preview image through the store, or None. `folder` and `file` arrive percent-decoded
+// from the webview /mod_thumb request. The checks make traversal unreachable: folder must be a plain
 // single path component and file exactly thumbnail.<known ext>, so the handler can never serve
 // config.yaml or anything outside engage/mods/<folder>/.
-pub fn thumb_file_path(sd_root: &Path, folder: &str, file: &str) -> Option<PathBuf> {
+pub fn read_thumbnail(store: &ModStore, folder: &str, file: &str) -> Option<Vec<u8>> {
     if folder.is_empty() || folder.contains(['/', '\\']) || folder.starts_with("..") {
         return None;
     }
     if !THUMB_EXTS.iter().any(|e| file == format!("thumbnail.{e}")) {
         return None;
     }
-    let path = mods_dir(sd_root).join(folder).join(file);
-    path.is_file().then_some(path)
+    store.read(&format!("{folder}/{file}"))
 }
 
 // Install a downloaded GameBanana mod. `bytes` is the raw .zip we already fetched. Extracts into
 // engage/mods/<name>/, replacing any earlier install of the same mod, then writes a config.yaml
 // (recording the GameBanana source for auto-updates) when the mod doesn't already carry one.
 // Returns the install folder so the caller can decorate it (the preview thumbnail).
-pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) -> Result<PathBuf, InstallError> {
-    if let Some(old) = installed_gamebanana_ids(sd_root).get(&detail.id) {
-        let _ = std::fs::remove_dir_all(old);
+pub fn install_gamebanana_mod(store: &ModStore, detail: &ModDetail, bytes: &[u8]) -> Result<String, InstallError> {
+    if let Some(old) = installed_gamebanana_ids(store).get(&detail.id) {
+        store.remove(old);
     }
 
-    let (dest, had_config) = extract_archive(sd_root, &sanitize(&detail.name), bytes)?;
+    let folder = sanitize(&detail.name);
+    // Clear any prior install at this exact folder too, so a partial one can't leave stragglers.
+    store.remove(&folder);
+
+    let (files, had_config) = extract_to_memory(bytes)?;
+    for (rel, data) in &files {
+        store.write(&format!("{folder}/{rel}"), data).map_err(|e| InstallError::Io(e.0))?;
+    }
 
     if !had_config {
         let config = ModConfig {
@@ -543,22 +516,28 @@ pub fn install_gamebanana_mod(sd_root: &Path, detail: &ModDetail, bytes: &[u8]) 
                 item_id: detail.id,
             }],
         };
-        write_config(&dest, &config)?;
+        write_config(store, &folder, &config)?;
     } else {
-        ensure_gamebanana_source(&dest, detail.id);
+        ensure_gamebanana_source(store, &folder, detail.id);
     }
 
-    Ok(dest)
+    Ok(folder)
 }
 
 // Install a downloaded NexusMods mod, same flow as GameBanana. The generated config records the
 // Nexus page as source_url only, since Cobalt has no Nexus update-source to auto-update from.
-pub fn install_nexus_mod(sd_root: &Path, meta: &NexusMeta, bytes: &[u8]) -> Result<(), InstallError> {
-    if let Some(old) = installed_nexus_ids(sd_root).get(&meta.mod_id) {
-        let _ = std::fs::remove_dir_all(old);
+pub fn install_nexus_mod(store: &ModStore, meta: &NexusMeta, bytes: &[u8]) -> Result<(), InstallError> {
+    if let Some(old) = installed_nexus_ids(store).get(&meta.mod_id) {
+        store.remove(old);
     }
 
-    let (dest, had_config) = extract_archive(sd_root, &sanitize(&meta.name), bytes)?;
+    let folder = sanitize(&meta.name);
+    store.remove(&folder);
+
+    let (files, had_config) = extract_to_memory(bytes)?;
+    for (rel, data) in &files {
+        store.write(&format!("{folder}/{rel}"), data).map_err(|e| InstallError::Io(e.0))?;
+    }
 
     if !had_config {
         let config = ModConfig {
@@ -571,9 +550,9 @@ pub fn install_nexus_mod(sd_root: &Path, meta: &NexusMeta, bytes: &[u8]) -> Resu
             source_url: (!meta.source_url.is_empty()).then(|| meta.source_url.clone()),
             update_sources: Vec::new(),
         };
-        write_config(&dest, &config)?;
+        write_config(store, &folder, &config)?;
     } else {
-        ensure_nexus_source(&dest, meta);
+        ensure_nexus_source(store, &folder, meta);
     }
 
     Ok(())
@@ -686,6 +665,17 @@ pub(crate) fn strip_html(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+
+    // Test setup still lays files out on disk directly; the code under test reaches them through a
+    // desktop ModStore rooted at the same temp folder.
+    fn mods_dir(root: &Path) -> PathBuf {
+        root.join("engage").join("mods")
+    }
+    fn store(root: &Path) -> ModStore {
+        ModStore::new(root)
+    }
 
     // The generated config.yaml has to match Cobalt's format exactly, a bad one panics the game.
     #[test]
@@ -795,12 +785,13 @@ mod tests {
     fn stamp_gamebanana_source_into_shipped_config() {
         let tmp = std::env::temp_dir().join(format!("cobalt_stamp_gb_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        let cfg = tmp.join("config.yaml");
+        let dir = mods_dir(&tmp).join("TheMod");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.yaml");
 
         // No update_sources at all: gains ours, keeps the modder's fields and id.
         std::fs::write(&cfg, "id: my-cool-mod\nname: Cool Mod\nauthor: Someone\n").unwrap();
-        ensure_gamebanana_source(&tmp, 446023);
+        ensure_gamebanana_source(&store(&tmp), "TheMod", 446023);
         let read: InstalledConfig =
             serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(read.id, "my-cool-mod");
@@ -814,7 +805,7 @@ mod tests {
         // Already has a gamebanana source (any id): file is left byte-for-byte alone, comments and all.
         let theirs = "# hand-written\nid: another\nupdate_sources:\n- !gamebanana\n  item_type: Mod\n  item_id: 111\n";
         std::fs::write(&cfg, theirs).unwrap();
-        ensure_gamebanana_source(&tmp, 446023);
+        ensure_gamebanana_source(&store(&tmp), "TheMod", 446023);
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), theirs);
 
         // A github entry is kept and ours is appended after it.
@@ -823,7 +814,7 @@ mod tests {
             "id: plugin\nupdate_sources:\n- !github\n  user: doge\n  repo: cool-plugin\n",
         )
         .unwrap();
-        ensure_gamebanana_source(&tmp, 446023);
+        ensure_gamebanana_source(&store(&tmp), "TheMod", 446023);
         let read: InstalledConfig =
             serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(read.update_sources.len(), 2);
@@ -835,7 +826,7 @@ mod tests {
 
         // A bare `update_sources:` key (parses as null) gets its first entry.
         std::fs::write(&cfg, "id: bare\nupdate_sources:\n").unwrap();
-        ensure_gamebanana_source(&tmp, 446023);
+        ensure_gamebanana_source(&store(&tmp), "TheMod", 446023);
         let read: InstalledConfig =
             serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(read.update_sources.len(), 1);
@@ -843,7 +834,7 @@ mod tests {
         // Garbage we can't parse is never touched.
         let garbage = "id: [unclosed\n  ???";
         std::fs::write(&cfg, garbage).unwrap();
-        ensure_gamebanana_source(&tmp, 446023);
+        ensure_gamebanana_source(&store(&tmp), "TheMod", 446023);
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), garbage);
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -853,8 +844,9 @@ mod tests {
     fn stamp_nexus_source_into_shipped_config() {
         let tmp = std::env::temp_dir().join(format!("cobalt_stamp_nx_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        let cfg = tmp.join("config.yaml");
+        let dir = mods_dir(&tmp).join("TheMod");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.yaml");
         let meta = NexusMeta {
             mod_id: 5150,
             name: "Cool Nexus Mod".into(),
@@ -865,7 +857,7 @@ mod tests {
 
         // Empty source_url: gains the page url, and the scanners recognize it from there.
         std::fs::write(&cfg, "id: their-id\nname: Cool Nexus Mod\n").unwrap();
-        ensure_nexus_source(&tmp, &meta);
+        ensure_nexus_source(&store(&tmp), "TheMod", &meta);
         let read: InstalledConfig =
             serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(read.id, "their-id");
@@ -875,7 +867,7 @@ mod tests {
         // An existing source_url (a plugin's repo) is never overwritten.
         let theirs = "id: plugin\nsource_url: https://github.com/doge/cool-plugin\n";
         std::fs::write(&cfg, theirs).unwrap();
-        ensure_nexus_source(&tmp, &meta);
+        ensure_nexus_source(&store(&tmp), "TheMod", &meta);
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), theirs);
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -924,7 +916,7 @@ mod tests {
         // Hand-dropped, no config at all.
         std::fs::create_dir_all(mods.join("MyHandMod").join("patches")).unwrap();
 
-        let found = scan_installed_mods(&tmp);
+        let found = scan_installed_mods(&store(&tmp));
         assert_eq!(found.len(), 3);
         // Sorted by name: "Cool Nexus Mod", "MyHandMod", "Revival Stone Hell".
         assert_eq!(found[0].source, ModSource::Nexus(5150));
@@ -962,7 +954,7 @@ mod tests {
         std::fs::create_dir_all(&mods).unwrap();
         std::fs::write(mods.join("Zipped Mod.zip"), &bytes).unwrap();
 
-        let found = scan_installed_mods(&tmp);
+        let found = scan_installed_mods(&store(&tmp));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "Zipped Mod");
         assert_eq!(found[0].author.as_deref(), Some("Rosado"));
@@ -980,7 +972,7 @@ mod tests {
         std::fs::write(mods.join("Plain.zip"), &plain).unwrap();
 
         // Sorted by name, so the config-less zip lands first.
-        let found = scan_installed_mods(&tmp);
+        let found = scan_installed_mods(&store(&tmp));
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].name, "Plain.zip");
         assert_eq!(found[0].source, ModSource::Manual);
@@ -1000,16 +992,16 @@ mod tests {
         let with = mods.join("My #1 Mod ✨");
         std::fs::create_dir_all(&with).unwrap();
         std::fs::write(with.join("config.yaml"), "id: gamebanana.1\nname: Number One\n").unwrap();
-        write_thumbnail(&with, b"png-bytes", "png");
+        write_thumbnail(&store(&tmp), "My #1 Mod ✨", b"png-bytes", "png");
         assert!(with.join("thumbnail.png").is_file());
 
         // A re-install that switches formats replaces the old file instead of leaving both.
-        write_thumbnail(&with, b"jpg-bytes", "jpg");
+        write_thumbnail(&store(&tmp), "My #1 Mod ✨", b"jpg-bytes", "jpg");
         assert!(!with.join("thumbnail.png").exists());
         assert_eq!(std::fs::read(with.join("thumbnail.jpg")).unwrap(), b"jpg-bytes");
 
         // Unknown extensions clamp to jpg rather than ever writing a thumbnail.exe.
-        write_thumbnail(&with, b"clamped", "exe");
+        write_thumbnail(&store(&tmp), "My #1 Mod ✨", b"clamped", "exe");
         assert!(!with.join("thumbnail.exe").exists());
         assert_eq!(std::fs::read(with.join("thumbnail.jpg")).unwrap(), b"clamped");
 
@@ -1023,7 +1015,7 @@ mod tests {
         std::fs::write(mods.join("Zipped.zip"), &plain).unwrap();
 
         // Scan reports the file name only where one exists.
-        let found = scan_installed_mods(&tmp);
+        let found = scan_installed_mods(&store(&tmp));
         assert_eq!(found.len(), 3);
         assert_eq!(found[0].name, "Bare");
         assert_eq!(found[0].thumb, None);
@@ -1032,16 +1024,16 @@ mod tests {
         assert_eq!(found[2].thumb, None);
 
         // Serve-side resolution accepts exactly the real thumbnail...
-        let served = thumb_file_path(&tmp, "My #1 Mod ✨", "thumbnail.jpg").unwrap();
-        assert_eq!(served, with.join("thumbnail.jpg"));
+        let served = read_thumbnail(&store(&tmp), "My #1 Mod ✨", "thumbnail.jpg").unwrap();
+        assert_eq!(served, b"clamped");
         // ...and rejects traversal, other files, unknown extensions, and misses.
-        assert!(thumb_file_path(&tmp, "..", "thumbnail.jpg").is_none());
-        assert!(thumb_file_path(&tmp, "a/b", "thumbnail.jpg").is_none());
-        assert!(thumb_file_path(&tmp, "a\\b", "thumbnail.jpg").is_none());
-        assert!(thumb_file_path(&tmp, "", "thumbnail.jpg").is_none());
-        assert!(thumb_file_path(&tmp, "My #1 Mod ✨", "config.yaml").is_none());
-        assert!(thumb_file_path(&tmp, "My #1 Mod ✨", "thumbnail.exe").is_none());
-        assert!(thumb_file_path(&tmp, "Bare", "thumbnail.jpg").is_none());
+        assert!(read_thumbnail(&store(&tmp), "..", "thumbnail.jpg").is_none());
+        assert!(read_thumbnail(&store(&tmp), "a/b", "thumbnail.jpg").is_none());
+        assert!(read_thumbnail(&store(&tmp), "a\\b", "thumbnail.jpg").is_none());
+        assert!(read_thumbnail(&store(&tmp), "", "thumbnail.jpg").is_none());
+        assert!(read_thumbnail(&store(&tmp), "My #1 Mod ✨", "config.yaml").is_none());
+        assert!(read_thumbnail(&store(&tmp), "My #1 Mod ✨", "thumbnail.exe").is_none());
+        assert!(read_thumbnail(&store(&tmp), "Bare", "thumbnail.jpg").is_none());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1060,7 +1052,7 @@ mod tests {
 
             let tmp = std::env::temp_dir().join(format!("cobalt_install_test_{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&tmp);
-            install_gamebanana_mod(&tmp, &detail, &bytes).unwrap();
+            install_gamebanana_mod(&store(&tmp), &detail, &bytes).unwrap();
 
             let mods = tmp.join("engage").join("mods");
             let dir = std::fs::read_dir(&mods).unwrap().next().unwrap().unwrap().path();

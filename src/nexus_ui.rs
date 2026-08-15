@@ -6,7 +6,7 @@
 // works directly for Premium accounts (free accounts get a clear message pointing at the website).
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use crate::storage::ModStore;
 
 use dioxus::prelude::*;
 use dioxus_sdk::storage::{use_storage, LocalStorage};
@@ -17,7 +17,7 @@ use crate::mods_ui::{SkeletonCard, Spinner};
 use crate::nexus::{self, Auth, NexusFile, NexusMod};
 
 #[component]
-pub fn NexusBrowser(sd_root: PathBuf) -> Element {
+pub fn NexusBrowser(store: ModStore) -> Element {
     let mut apikey = use_storage::<LocalStorage, String>("nexus_apikey".into(), String::new);
 
     // Validate the stored key (and re-validate if it changes). The outer Option is "still loading",
@@ -46,7 +46,7 @@ pub fn NexusBrowser(sd_root: PathBuf) -> Element {
                         }
                         button { class: "secondary", onclick: move |_| apikey.set(String::new()), "Sign out" }
                     }
-                    NexusList { sd_root: sd_root.clone(), apikey: apikey() }
+                    NexusList { store: store.clone(), apikey: apikey() }
                 },
                 Some(Some(Err(e))) => rsx! {
                     NexusSetup { apikey, error: Some(e.to_string()) }
@@ -99,7 +99,7 @@ fn NexusSetup(mut apikey: Signal<String>, error: Option<String>) -> Element {
 }
 
 #[component]
-fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
+fn NexusList(store: ModStore, apikey: String) -> Element {
     // How many mods to pull per page from the GraphQL catalog.
     const PAGE: u32 = 20;
 
@@ -114,7 +114,7 @@ fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
     let mut loading = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
 
-    let installed_root = sd_root.clone();
+    let installed_root = store.clone();
     let installed = use_signal(move || {
         install::installed_nexus_ids(&installed_root)
             .into_keys()
@@ -228,7 +228,7 @@ fn NexusList(sd_root: PathBuf, apikey: String) -> Element {
                 key: "{m.mod_id}",
                 info: m.clone(),
                 apikey: apikey.clone(),
-                sd_root: sd_root.clone(),
+                store: store.clone(),
                 installed,
                 on_close: move |_| selected.set(None),
             }
@@ -274,7 +274,7 @@ fn NexusCard(m: NexusMod, installed: bool, show_nsfw: bool, on_open: EventHandle
 fn NexusDetailPanel(
     info: NexusMod,
     apikey: String,
-    sd_root: PathBuf,
+    store: ModStore,
     mut installed: Signal<HashSet<u64>>,
     on_close: EventHandler<()>,
 ) -> Element {
@@ -306,7 +306,7 @@ fn NexusDetailPanel(
                         button {
                             class: "danger",
                             onclick: {
-                                let sd = sd_root.clone();
+                                let sd = store.clone();
                                 let id = info.mod_id;
                                 move |_| {
                                     install::uninstall_nexus_mod(&sd, id);
@@ -338,7 +338,7 @@ fn NexusDetailPanel(
                                     info: info.clone(),
                                     file: f.clone(),
                                     apikey: apikey.clone(),
-                                    sd_root: sd_root.clone(),
+                                    store: store.clone(),
                                     installed,
                                 }
                             }
@@ -346,7 +346,7 @@ fn NexusDetailPanel(
                     }
                 }
 
-                ManualInstall { info: info.clone(), sd_root: sd_root.clone(), installed }
+                ManualInstall { info: info.clone(), store: store.clone(), installed }
 
                 a { class: "mod_page_link", href: "{nexus::mod_page_url(info.mod_id)}", "Open the mod on NexusMods" }
             }
@@ -361,7 +361,7 @@ fn NexusDetailPanel(
 pub async fn run_nxm<F: FnMut(String)>(
     link: &str,
     apikey: String,
-    sd_root: PathBuf,
+    store: ModStore,
     mut on_status: F,
 ) -> Result<String, String> {
     let nxm = nexus::parse_nxm(link).map_err(|e| e.to_string())?;
@@ -389,7 +389,7 @@ pub async fn run_nxm<F: FnMut(String)>(
         description: info.summary.clone(),
         source_url: nexus::mod_page_url(info.mod_id),
     };
-    install::install_nexus_mod(&sd_root, &meta, &bytes).map_err(|e| e.to_string())?;
+    install::install_nexus_mod(&store, &meta, &bytes).map_err(|e| e.to_string())?;
     Ok(info.name)
 }
 
@@ -398,7 +398,7 @@ pub async fn run_nxm<F: FnMut(String)>(
 // nxm:// link and the API refuses free downloads). We already know the mod's details from the
 // listing, so the file just supplies the bytes and we build a proper config.yaml around them.
 #[component]
-fn ManualInstall(info: NexusMod, sd_root: PathBuf, mut installed: Signal<HashSet<u64>>) -> Element {
+fn ManualInstall(info: NexusMod, store: ModStore, mut installed: Signal<HashSet<u64>>) -> Element {
     let mut status = use_signal(|| None::<String>);
     let input_id = format!("manual_zip_{}", info.mod_id);
 
@@ -415,7 +415,7 @@ fn ManualInstall(info: NexusMod, sd_root: PathBuf, mut installed: Signal<HashSet
                 display: "none",
                 onchange: move |evt| {
                     let info = info.clone();
-                    let sd = sd_root.clone();
+                    let sd = store.clone();
                     async move {
                         let files = evt.files();
                         let Some(file) = files.first() else {
@@ -470,7 +470,7 @@ fn NexusInstallRow(
     info: NexusMod,
     file: NexusFile,
     apikey: String,
-    sd_root: PathBuf,
+    store: ModStore,
     installed: Signal<HashSet<u64>>,
 ) -> Element {
     let mut status = use_signal(|| Status::Idle);
@@ -489,7 +489,7 @@ fn NexusInstallRow(
                             let auth = Auth::ApiKey(apikey.clone());
                             let info = info.clone();
                             let file = file.clone();
-                            let sd = sd_root.clone();
+                            let sd = store.clone();
                             status.set(Status::Downloading(0, 0));
                             spawn(async move {
                                 // Premium can fetch the link directly, free accounts get a clear error here.

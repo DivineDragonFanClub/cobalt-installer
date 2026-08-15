@@ -1,25 +1,43 @@
-// The "My Mods" view (desktop only): everything currently sitting in engage/mods, whether we
-// installed it or the user dropped it in by hand. Each row shows where the mod came from and lets
-// the user open its folder or remove it. The list is just a scan of the folder, no database.
+// The "My Mods" view: everything currently sitting in engage/mods, whether we installed it or the
+// user dropped it in by hand. Each row shows where the mod came from and lets the user open its
+// folder or remove it. The list is just a scan of the folder (through the ModStore), no database.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use crate::storage::ModStore;
 
 use dioxus::prelude::*;
 
 use crate::install::{self, InstalledMod, ModSource};
 
+// Minimal base64 for inlining a saved thumbnail as a data: URI on Android, which has no path-based
+// image server (desktop serves saved art through the mod_thumb protocol instead).
+#[cfg(not(feature = "desktop"))]
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = ((chunk[0] as u32) << 16)
+            | ((*chunk.get(1).unwrap_or(&0) as u32) << 8)
+            | *chunk.get(2).unwrap_or(&0) as u32;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
 #[component]
-pub fn MyMods(sd_root: PathBuf) -> Element {
+pub fn MyMods(store: ModStore) -> Element {
     // Scan once on mount, then re-scan whenever we change something (uninstall) or the user asks.
-    let scan_root = sd_root.clone();
+    let scan_root = store.clone();
     let mut mods = use_signal(move || install::scan_installed_mods(&scan_root));
 
     // "View" opens the browser's detail panel right here as an overlay — no tab jump. The
     // panel fetches its own data from the GameBanana id; this set feeds its Installed badge
     // and gets refreshed on open so it reflects reality even after outside changes.
     let mut viewing = use_signal(|| None::<u64>);
-    let ids_root = sd_root.clone();
+    let ids_root = store.clone();
     let mut installed_ids = use_signal(move || {
         install::installed_gamebanana_ids(&ids_root).into_keys().collect::<HashSet<u64>>()
     });
@@ -33,20 +51,19 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         ids.sort();
         ids
     });
-    let rescan_root = sd_root.clone();
+    let rescan_root = store.clone();
     use_effect(move || {
         let _ = active_ids();
         mods.set(install::scan_installed_mods(&rescan_root));
     });
 
-    let refresh_root = sd_root.clone();
+    let refresh_root = store.clone();
     let mut refresh = move |_| mods.set(install::scan_installed_mods(&refresh_root));
 
     // Open the whole mods folder in the OS file browser.
-    let open_root = sd_root.clone();
+    let open_root = store.clone();
     let open_mods_folder = move |_| {
-        let mods_dir = open_root.join("engage").join("mods");
-        let _ = crate::open_dir(mods_dir);
+        let _ = crate::open_dir(open_root.path_of(""));
     };
 
     // The hamburger next to the sort select, holding the list-level tools.
@@ -149,8 +166,7 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                                         .collect::<Vec<_>>()
                                         .join("\n");
                                     // Best-effort: no clipboard is not worth an error state.
-                                    let _ = arboard::Clipboard::new()
-                                        .and_then(|mut c| c.set_text(text));
+                                    crate::copy_text(&text);
                                 },
                                 "Copy mod list"
                             }
@@ -196,10 +212,10 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                         InstalledRow {
                             key: "{m.folder}",
                             entry: m.clone(),
-                            sd_root: sd_root.clone(),
+                            store: store.clone(),
                             mods,
                             on_view: {
-                                let root = sd_root.clone();
+                                let root = store.clone();
                                 move |id| {
                                     installed_ids
                                         .set(install::installed_gamebanana_ids(&root).into_keys().collect());
@@ -216,10 +232,10 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
         if let Some(id) = viewing() {
             crate::mods_ui::ModDetailPanel {
                 mod_id: id,
-                sd_root: sd_root.clone(),
+                store: store.clone(),
                 installed: installed_ids,
                 on_close: {
-                    let root = sd_root.clone();
+                    let root = store.clone();
                     move |_| {
                         viewing.set(None);
                         // The panel can reinstall or uninstall; the list must reflect it.
@@ -242,9 +258,9 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                         "X"
                     }
                     crate::starter_ui::StarterPack {
-                        sd_root: sd_root.clone(),
+                        store: store.clone(),
                         on_close: {
-                            let root = sd_root.clone();
+                            let root = store.clone();
                             move |_| {
                                 show_starter.set(false);
                                 mods.set(install::scan_installed_mods(&root));
@@ -402,8 +418,9 @@ fn percent_decode(s: &str) -> Option<String> {
 // protocol down on every tab switch. The handler runs synchronously on the main thread inside the
 // webview's scheme callback, in the registering component's scope, so reading the storage signals
 // is the same pattern as the nxm wry handler in main.rs. The install target is resolved per
-// request, so a mid-session sd_root switch just works. Anything unexpected answers 404 — never
+// request, so a mid-session store switch just works. Anything unexpected answers 404 — never
 // panic in here, and never drop the responder (that would strand the request in the webview).
+#[cfg(feature = "desktop")]
 pub(crate) fn use_thumb_protocol(installation_type: Signal<String>, sdcard_path: Signal<String>) {
     use dioxus::desktop::wry::http::Response;
     dioxus::desktop::use_asset_handler("mod_thumb", move |request, responder| {
@@ -413,15 +430,14 @@ pub(crate) fn use_thumb_protocol(installation_type: Signal<String>, sdcard_path:
             let (_name, folder, file) = (segs.next()?, segs.next()?, segs.next()?);
             let folder = percent_decode(folder)?;
             let file = percent_decode(file)?;
-            let sd = crate::resolve_sd_root(&installation_type(), &sdcard_path())?;
-            let full = install::thumb_file_path(&sd, &folder, &file)?;
-            let mime = match full.extension().and_then(|e| e.to_str()) {
+            let store = crate::resolve_store(&installation_type(), &sdcard_path())?;
+            let bytes = install::read_thumbnail(&store, &folder, &file)?;
+            let mime = match file.rsplit('.').next() {
                 Some("png") => "image/png",
                 Some("webp") => "image/webp",
                 Some("gif") => "image/gif",
                 _ => "image/jpeg",
             };
-            let bytes = std::fs::read(&full).ok()?;
             Response::builder().header("Content-Type", mime).body(bytes).ok()
         })();
         match served {
@@ -435,7 +451,7 @@ pub(crate) fn use_thumb_protocol(installation_type: Signal<String>, sdcard_path:
 #[component]
 fn InstalledRow(
     entry: InstalledMod,
-    sd_root: PathBuf,
+    store: ModStore,
     mods: Signal<Vec<InstalledMod>>,
     // Called with the GameBanana mod id when the user wants the detail panel.
     on_view: EventHandler<u64>,
@@ -473,16 +489,21 @@ fn InstalledRow(
 
     let reveal_label = crate::reveal_label();
     let reveal = {
-        let path = entry.path.clone();
+        let store = store.clone();
+        let folder = entry.folder.clone();
         move |_| {
             menu_open.set(false);
-            let _ = crate::reveal_in_file_browser(&path);
+            let _ = crate::reveal_in_file_browser(store.path_of(&folder));
         }
     };
 
     // Row art: the preview saved at install time, served through the mod_thumb protocol below. The
     // folder name is percent-encoded (spaces, #, unicode would break the URL), and v= busts the
     // webview's image cache when a reinstall replaces the folder.
+    // Desktop serves saved art through the mod_thumb protocol (there's no path-based file server on
+    // Android). Android has no such handler, so it reads the saved bytes through the store once and
+    // renders them inline as a data: URI instead.
+    #[cfg(feature = "desktop")]
     let thumb_src = entry.thumb.as_ref().map(|file| {
         let v = entry
             .installed_at
@@ -491,6 +512,24 @@ fn InstalledRow(
             .unwrap_or(0);
         format!("/mod_thumb/{}/{file}?v={v}", crate::gamebanana::urlencoding_encode(&entry.folder))
     });
+    #[cfg(not(feature = "desktop"))]
+    let thumb_src = {
+        // Memoized so a mod's thumbnail is read + encoded once, not on every My Mods re-render.
+        let store = store.clone();
+        let folder = entry.folder.clone();
+        let thumb = entry.thumb.clone();
+        use_memo(move || {
+            let file = thumb.as_ref()?;
+            let bytes = store.read(&format!("{folder}/{file}"))?;
+            let mime = match file.rsplit('.').next() {
+                Some("png") => "image/png",
+                Some("webp") => "image/webp",
+                Some("gif") => "image/gif",
+                _ => "image/jpeg",
+            };
+            Some(format!("data:{mime};base64,{}", base64_encode(&bytes)))
+        })()
+    };
     // The tile is a second door to the same place as the GB title click; other sources' tiles
     // stay inert (there's no details view to open for them).
     let thumb_view = match entry.source {
@@ -609,12 +648,12 @@ fn InstalledRow(
                                 button {
                                     class: "menu_item danger_item armed",
                                     onclick: {
-                                        let path = entry.path.clone();
-                                        let root = sd_root.clone();
+                                        let folder = entry.folder.clone();
+                                        let root = store.clone();
                                         move |_| {
                                             menu_open.set(false);
                                             confirming.set(false);
-                                            install::remove_installed_mod(&path);
+                                            install::remove_installed_mod(&root, &folder);
                                             mods.set(install::scan_installed_mods(&root));
                                         }
                                     },

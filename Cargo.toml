@@ -15,6 +15,14 @@ zip = "2.2.2"
 # cross-compile OpenSSL. Desktop is happy with rustls too. json/stream are for the
 # GameBanana API and the streaming mod download.
 reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "json", "stream"] }
+# Shared by the mod browser on both platforms now: serde for the GameBanana API + config.yaml,
+# serde_yaml to write configs Cobalt can read, futures-util to consume the download byte stream,
+# serde_json for the SAF directory listing / update-check, anyhow for the API + JNI error plumbing.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+futures-util = "0.3"
+anyhow = "1"
 
 # Desktop-only deps. The Android build doesn't pull these in, so nothing here
 # needs to cross-compile for android.
@@ -26,15 +34,8 @@ arboard = { version = "3", default-features = false }
 # dev bridge: lets external tools (MCP debuggers) eval JS in the running app.
 # desktop-only, and the wiring is additionally gated to debug_assertions.
 dioxus-inspector = { version = "0.1.2", optional = true }
-# The mod browser: serde for the GameBanana API + config.yaml, serde_yaml to write configs
-# Cobalt can read, futures-util to consume the download byte stream.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_yaml = "0.9"
-futures-util = "0.3"
 # oneshot channel to await a blocking FTP upload that runs on its own thread (keeps the UI live).
 futures-channel = "0.3"
-anyhow = "1"
 # Plain FTP client for installing straight to a modded console (sys-ftpd, anonymous:5000). No TLS
 # feature, the console's FTP is unencrypted on the LAN. The blocking client runs on its own thread.
 suppaftp = "6"
@@ -55,11 +56,6 @@ rustls = "0.23"
 jni = "0.21"
 ndk-context = "0.1"
 futures-timer = "3"
-anyhow = "1"
-# Parse the GitHub releases API response for the update check (serde_json is already pulled in by
-# reqwest's json feature, this just adds the derive so we can deserialize into a struct).
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 
 # Only for the network-gated smoke test (install::tests::live_install_roundtrip), which needs an
 # async runtime to drive reqwest. Not part of the shipped app.

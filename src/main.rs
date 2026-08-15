@@ -111,31 +111,39 @@ use dioxus_sdk::storage::*;
 
 // The GameBanana mod browser (browse/search, install, config.yaml generation) is desktop only for
 // now. It's split into modules to keep main.rs readable, the Android build never pulls it in.
+// FTP delivery + self-update stay desktop-only (a console on the LAN / desktop release assets).
 #[cfg(feature = "desktop")]
 mod ftp;
 #[cfg(feature = "desktop")]
-mod gamebanana;
-#[cfg(feature = "desktop")]
-mod icons;
+mod updater;
 // Dev-only component gallery; see the Storybook nav item (debug builds only).
 #[cfg(all(feature = "desktop", debug_assertions))]
 mod storybook;
-#[cfg(feature = "desktop")]
-mod install;
-#[cfg(feature = "desktop")]
-mod installed_ui;
-#[cfg(feature = "desktop")]
-mod mods_ui;
+// NexusMods is desktop-only for now (and disabled behind NEXUS_ENABLED), so its client + browser
+// aren't built on Android.
 #[cfg(feature = "desktop")]
 mod nexus;
 #[cfg(feature = "desktop")]
-mod downloads;
-#[cfg(feature = "desktop")]
 mod nexus_ui;
-#[cfg(feature = "desktop")]
+// The mod browser + installer, shared across desktop and Android. Everything filesystem goes through
+// the `storage` ModStore (std::fs on desktop, SAF/JNI on Android); platform-only bits inside each
+// module are cfg-gated.
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod gamebanana;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod icons;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod storage;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod install;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod installed_ui;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod mods_ui;
+#[cfg(any(feature = "desktop", target_os = "android"))]
+mod downloads;
+#[cfg(any(feature = "desktop", target_os = "android"))]
 mod starter_ui;
-#[cfg(feature = "desktop")]
-mod updater;
 
 // Everything about locating an emulator on the host filesystem is desktop only.
 // On Android we don't hunt for install folders, the user hands us Eden's folder
@@ -224,6 +232,14 @@ fn resolve_sd_root(installation_type: &str, sdcard: &str) -> Option<std::path::P
     } else {
         get_emulator(installation_type).and_then(|e| e.sd_card_path())
     }
+}
+
+// The mod-storage handle for the current install target. The browser and My Mods take one of these
+// instead of a raw path, so the same components can run on Android over SAF. Desktop wraps the
+// resolved SD root; None when no target is chosen yet.
+#[cfg(feature = "desktop")]
+fn resolve_store(installation_type: &str, sdcard: &str) -> Option<storage::ModStore> {
+    resolve_sd_root(installation_type, sdcard).map(|root| storage::ModStore::new(&root))
 }
 
 // Removable drives only (SD card / USB), where a real console's SD shows up. Used by the SD card
@@ -355,7 +371,7 @@ async fn check_android_update() -> Option<(String, String)> {
 // here must match MainActivity.kt exactly.
 #[cfg(target_os = "android")]
 mod saf {
-    use jni::objects::{JObject, JString, JValue};
+    use jni::objects::{JByteArray, JObject, JString, JValue};
     use jni::JavaVM;
 
     // Grab the JVM and our Activity from the Android runtime, attach this thread,
@@ -407,6 +423,90 @@ mod saf {
                 .z()?;
             Ok(ok)
         })
+    }
+
+    // ---- The mod-storage verbs the ModStore backend calls (all paths are relative to the granted
+    // tree, e.g. "engage/mods/MyMod/config.yaml"; Kotlin remaps them onto Eden's layout) ----------
+
+    // List a directory's children as a JSON array [{ "name", "isDir", "modified" (unix millis) }].
+    // Returns "[]" when the provider can't enumerate the folder, so callers just see an empty list.
+    pub fn list_dir(rel: &str) -> anyhow::Result<String> {
+        with_activity(|env, activity| {
+            let jrel = env.new_string(rel)?;
+            let value = env
+                .call_method(
+                    activity,
+                    "listDir",
+                    "(Ljava/lang/String;)Ljava/lang/String;",
+                    &[JValue::Object(&jrel)],
+                )?
+                .l()?;
+            let s: String = env.get_string(&JString::from(value))?.into();
+            Ok(s)
+        })
+    }
+
+    // Read a file's bytes, or None if it isn't there.
+    pub fn read_file(rel: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        with_activity(|env, activity| {
+            let jrel = env.new_string(rel)?;
+            let value = env
+                .call_method(activity, "readFile", "(Ljava/lang/String;)[B", &[JValue::Object(&jrel)])?
+                .l()?;
+            if value.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(env.convert_byte_array(JByteArray::from(value))?))
+            }
+        })
+    }
+
+    // Write bytes to a file (creating parent folders). Returns true on success.
+    pub fn write_mod_file(rel: &str, bytes: &[u8]) -> anyhow::Result<bool> {
+        with_activity(|env, activity| {
+            let jrel = env.new_string(rel)?;
+            let array = env.byte_array_from_slice(bytes)?;
+            let ok = env
+                .call_method(
+                    activity,
+                    "writeModFile",
+                    "(Ljava/lang/String;[B)Z",
+                    &[JValue::Object(&jrel), JValue::Object(&array)],
+                )?
+                .z()?;
+            Ok(ok)
+        })
+    }
+
+    // Delete a file or folder (recursively). Returns whether anything was removed.
+    pub fn delete_path(rel: &str) -> anyhow::Result<bool> {
+        with_activity(|env, activity| {
+            let jrel = env.new_string(rel)?;
+            let ok = env
+                .call_method(activity, "deletePath", "(Ljava/lang/String;)Z", &[JValue::Object(&jrel)])?
+                .z()?;
+            Ok(ok)
+        })
+    }
+
+    // Whether a file or folder exists.
+    pub fn path_exists(rel: &str) -> anyhow::Result<bool> {
+        with_activity(|env, activity| {
+            let jrel = env.new_string(rel)?;
+            let ok = env
+                .call_method(activity, "pathExists", "(Ljava/lang/String;)Z", &[JValue::Object(&jrel)])?
+                .z()?;
+            Ok(ok)
+        })
+    }
+
+    // Whether Cobalt's loader patch is present, to unlock the Browse / My Mods tabs.
+    pub fn cobalt_installed() -> bool {
+        with_activity(|env, activity| {
+            let ok = env.call_method(activity, "cobaltInstalled", "()Z", &[])?.z()?;
+            Ok(ok)
+        })
+        .unwrap_or(false)
     }
 
     // Result of the most recent folder pick: 0 = none yet, 1 = granted, 2 = wrong folder.
@@ -470,6 +570,7 @@ pub(crate) fn reveal_label() -> &'static str {
 }
 
 // Reveal (select) a file or folder in the OS file browser rather than opening it.
+#[cfg(feature = "desktop")]
 pub(crate) fn reveal_in_file_browser(path: impl AsRef<Path>) -> std::io::Result<Child> {
     match std::env::consts::OS {
         "macos" => Command::new("open").arg("-R").arg(path.as_ref()).spawn(),
@@ -488,6 +589,28 @@ pub(crate) fn reveal_in_file_browser(path: impl AsRef<Path>) -> std::io::Result<
         }
     }
 }
+
+// Android has no path-based file browser (the target is a SAF document tree, not a filesystem path),
+// so these are no-ops there. They keep the shared My Mods / browser UI compiling; the reveal / open
+// buttons simply do nothing on Android for now.
+#[cfg(target_os = "android")]
+pub(crate) fn open_dir<P: AsRef<std::path::Path>>(_path: P) {}
+#[cfg(target_os = "android")]
+pub(crate) fn reveal_in_file_browser<P: AsRef<std::path::Path>>(_path: P) {}
+#[cfg(target_os = "android")]
+pub(crate) fn reveal_label() -> &'static str {
+    "Open folder"
+}
+
+// "Copy mod list" to the clipboard: arboard on desktop, a no-op on Android (no clipboard dep there).
+#[cfg(feature = "desktop")]
+pub(crate) fn copy_text(text: &str) {
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text(text.to_string());
+    }
+}
+#[cfg(target_os = "android")]
+pub(crate) fn copy_text(_text: &str) {}
 
 
 #[cfg(feature = "desktop")]
@@ -624,6 +747,205 @@ async fn install_cobalt_ftp(config: ftp::FtpConfig, mut status: Signal<String>) 
     }
 }
 
+// In-page controller navigation for the Android handheld build. Polls the Gamepad API and drives a
+// focus ring over the on-screen controls with spatial (nearest-in-direction) navigation. D-pad or
+// left stick moves; A (button 0) clicks; B (button 1) sends Escape (closes the detail/lightbox/
+// starter overlays, which already listen for it); the bumpers (4/5) page the tab bar. Focusables are
+// scoped to the top-most overlay when one is open so navigation stays inside it. Idempotent, so a
+// re-eval won't stack loops.
+#[cfg(target_os = "android")]
+const GAMEPAD_NAV_JS: &str = r#"
+(function () {
+  if (window.__gpNav) return;
+  window.__gpNav = true;
+
+  // Widen "Load more" to full width so controller "down" from any grid column lands on it (the
+  // waypoint into the footer) instead of skipping straight past it.
+  var st = document.createElement('style');
+  st.textContent = '.mod_pager button { width: 100%; }';
+  document.head.appendChild(st);
+
+  var SEL = 'button:not([disabled]), a[href], input, select, textarea, .mod_card, .starter_row, .installed_row, .installed_name_group, .installed_thumb.clickable, [data-gp]';
+  // Whole-row/card focus targets: at the top level you land on these, not the controls inside them.
+  var CARDS = '.mod_card, .starter_row, .installed_row';
+  // Places you "drill into" — an open overlay or a My Mods row's ⋯ menu — where the inner controls
+  // become the targets and navigation is confined.
+  var DRILL = '.lightbox_overlay, .mod_detail_overlay, .starter_overlay, .row_menu';
+
+  var current = null;
+  // Where focus last was, so a list re-render (e.g. Load more swapping in a spinner) restores focus
+  // near that spot instead of snapping back to the top.
+  var lastCenter = null;
+  // A My Mods row the user "entered" (pressed A on): navigation is confined to its own controls
+  // (open detail, Show more, the ⋯ menu) until they back out with B.
+  var enteredRow = null;
+
+  function scopeRoot() {
+    var d = document.querySelector(DRILL);
+    if (d) return d;
+    if (enteredRow && document.contains(enteredRow) && enteredRow.offsetParent !== null) return enteredRow;
+    return document;
+  }
+  function focusables() {
+    var scope = scopeRoot();
+    var drilled = scope !== document;
+    var all = Array.prototype.slice.call(scope.querySelectorAll(SEL)).filter(function (el) {
+      // The tab bar is driven by the bumpers, not the stick, so it's never a spatial target (that's
+      // what made "up" jump to the tabs instead of the row above).
+      if (el.closest('.android_tabbar')) return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && el.offsetParent !== null &&
+        getComputedStyle(el).visibility !== 'hidden';
+    });
+    // Inside a drill-in (overlay / row menu) every control is a target. At the top level, land on the
+    // row/card itself and hide the controls inside it — they come up only once you enter the card.
+    if (drilled) return all;
+    return all.filter(function (el) { return el.matches(CARDS) || !el.closest(CARDS); });
+  }
+  // Only ever one focus ring: strip it off whatever had it, so paths that null `current` before
+  // refocusing (entering a row, opening a modal) don't leave a stale highlight behind.
+  function clearFocus() {
+    var prev = document.querySelectorAll('.gp_focus');
+    for (var i = 0; i < prev.length; i++) prev[i].classList.remove('gp_focus');
+    current = null;
+  }
+  function setFocus(el) {
+    clearFocus();
+    current = el || null;
+    if (!current) return;
+    current.classList.add('gp_focus');
+    current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    var r = current.getBoundingClientRect();
+    lastCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    // The tab bar is sticky at the top, so nudge the page down if it would cover the focused row.
+    var bar = document.querySelector('.android_tabbar');
+    var barH = bar ? bar.getBoundingClientRect().bottom : 0;
+    if (r.top < barH + 8) window.scrollBy(0, r.top - barH - 8);
+  }
+  function ensure() {
+    if (current && document.contains(current) && current.offsetParent !== null &&
+        scopeRoot().contains(current)) return;
+    var list = focusables();
+    if (!list.length) { clearFocus(); return; }
+    if (!lastCenter) { setFocus(list[0]); return; }
+    // Re-land on whatever is nearest to where focus last was, so a re-render (Load more) doesn't
+    // snap the cursor back to the top.
+    var best = list[0], bestD = Infinity;
+    list.forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      var dx = r.left + r.width / 2 - lastCenter.x, dy = r.top + r.height / 2 - lastCenter.y;
+      var d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = el; }
+    });
+    setFocus(best);
+  }
+  // 0 when ranges [a1,a2] and [b1,b2] overlap, else the gap between them.
+  function gap(a1, a2, b1, b2) {
+    if (a2 >= b1 && b2 >= a1) return 0;
+    return b1 > a2 ? b1 - a2 : a1 - b2;
+  }
+  function move(dir) {
+    ensure();
+    if (!current) return;
+    var cr = current.getBoundingClientRect();
+    var best = null, bestScore = Infinity;
+    focusables().forEach(function (el) {
+      if (el === current) return;
+      var r = el.getBoundingClientRect();
+      var along, cross;
+      // `along` = distance in the travel direction (0 if adjacent); `cross` = gap on the other axis
+      // (0 when they line up). Aligned candidates win on pure distance; a big cross gap is penalized
+      // hard so we don't jump sideways across the layout (e.g. to the footer theme toggle).
+      if (dir === 'up')    { if (r.bottom > cr.top - 1) return; along = cr.top - r.bottom; cross = gap(cr.left, cr.right, r.left, r.right); }
+      if (dir === 'down')  { if (r.top < cr.bottom + 1) return; along = r.top - cr.bottom; cross = gap(cr.left, cr.right, r.left, r.right); }
+      if (dir === 'left')  { if (r.right > cr.left - 1) return; along = cr.left - r.right; cross = gap(cr.top, cr.bottom, r.top, r.bottom); }
+      if (dir === 'right') { if (r.left < cr.right + 1) return; along = r.left - cr.right; cross = gap(cr.top, cr.bottom, r.top, r.bottom); }
+      if (along < 0) along = 0;
+      var score = along + cross * 3;
+      if (score < bestScore) { bestScore = score; best = el; }
+    });
+    if (best) setFocus(best);
+  }
+  function activate() {
+    ensure();
+    if (!current) return;
+    if (current.matches('input, textarea, select')) { try { current.focus(); } catch (e) {} return; }
+    // A My Mods row: enter it so its own controls (open detail, Show more, the ⋯ menu) become the
+    // targets, rather than doing one fixed thing.
+    if (current.classList.contains('installed_row')) {
+      enteredRow = current;
+      clearFocus();
+      ensure();
+      return;
+    }
+    current.click();
+    // A click can open an overlay/menu (focus should move into it) or close one (e.g. the modal's ✕,
+    // which removes the focused button). Either way `ensure` re-lands the ring in the current scope,
+    // and no-ops when the click changed nothing.
+    setTimeout(ensure, 60);
+  }
+  function back() {
+    // Peel back one layer at a time: an open ⋯ menu, then any overlay, then the entered row.
+    var bd = document.querySelector('.menu_backdrop');
+    if (bd) {
+      var k = enteredRow && enteredRow.querySelector('.kebab');
+      bd.click();
+      setTimeout(function () { setFocus(k || focusables()[0]); }, 60);
+      return;
+    }
+    if (document.querySelector('.lightbox_overlay, .mod_detail_overlay, .starter_overlay')) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      setTimeout(function () { clearFocus(); ensure(); }, 60);
+      return;
+    }
+    if (enteredRow) {
+      var row = enteredRow;
+      enteredRow = null;
+      setFocus(row);
+    }
+  }
+  function pageTab(delta) {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.android_tab'));
+    if (!tabs.length) return;
+    var i = tabs.findIndex(function (t) { return t.classList.contains('active'); });
+    if (i < 0) i = 0;
+    var n = tabs[Math.min(tabs.length - 1, Math.max(0, i + delta))];
+    if (n && !n.disabled) { n.click(); clearFocus(); }
+  }
+
+  // Edge-trigger with an initial delay then repeat, so a held direction steps steadily.
+  var down = {}, nextAt = {};
+  function edge(name, isDown) {
+    var t = performance.now();
+    if (!isDown) { down[name] = false; return false; }
+    if (!down[name]) { down[name] = true; nextAt[name] = t + 300; return true; }
+    if (t >= nextAt[name]) { nextAt[name] = t + 130; return true; }
+    return false;
+  }
+
+  function poll() {
+    var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    var gp = null;
+    for (var i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+    if (gp) {
+      var b = gp.buttons, ax = gp.axes, D = 0.5;
+      var bd = function (n) { return b[n] && b[n].pressed; };
+      if (edge('up', bd(12) || ax[1] < -D)) move('up');
+      if (edge('down', bd(13) || ax[1] > D)) move('down');
+      if (edge('left', bd(14) || ax[0] < -D)) move('left');
+      if (edge('right', bd(15) || ax[0] > D)) move('right');
+      if (edge('a', bd(0))) activate();
+      if (edge('b', bd(1))) back();
+      if (edge('lb', bd(4))) pageTab(-1);
+      if (edge('rb', bd(5))) pageTab(1);
+    }
+    requestAnimationFrame(poll);
+  }
+  requestAnimationFrame(poll);
+  setTimeout(ensure, 400);
+})();
+"#;
+
 #[component]
 fn App() -> Element {
     #[cfg(feature = "desktop")]
@@ -646,6 +968,14 @@ fn App() -> Element {
                 let _ = cmd.response_tx.send(response);
             }
         });
+    });
+
+    // Android is a handheld (Odin3): let its controller drive the UI. A small in-page layer polls the
+    // Gamepad API and moves a focus ring between the on-screen controls (D-pad/stick), activates with
+    // A, backs out of overlays with B, and pages the tabs with the bumpers. See GAMEPAD_NAV_JS.
+    #[cfg(target_os = "android")]
+    use_future(|| async move {
+        document::eval(GAMEPAD_NAV_JS);
     });
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -721,11 +1051,51 @@ fn ThemeToggle() -> Element {
     }
 }
 
-// The Android build keeps the OS scheme; no toggle yet.
+// Android has no dioxus-sdk storage, so the choice is kept in the webview's localStorage instead
+// (read on mount, written on each toggle). Same auto → light → dark cycle as desktop.
 #[cfg(not(feature = "desktop"))]
 #[component]
 fn ThemeToggle() -> Element {
-    rsx! {}
+    let mut theme = use_signal(|| "auto".to_string());
+
+    // Read the saved choice on mount and apply it to <html>.
+    use_future(move || async move {
+        let mut ev = document::eval(
+            "const t = localStorage.getItem('theme') || 'auto';\n\
+             if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;\n\
+             else delete document.documentElement.dataset.theme;\n\
+             dioxus.send(t);",
+        );
+        if let Ok(saved) = ev.recv::<String>().await {
+            theme.set(saved);
+        }
+    });
+
+    let (icon_class, label, next) = match theme().as_str() {
+        "light" => ("tt_icon tt_day", "Light", "dark"),
+        "dark" => ("tt_icon tt_night", "Dark", "auto"),
+        _ => ("tt_icon tt_evening", "Auto", "light"),
+    };
+
+    rsx! {
+        button {
+            class: "theme_toggle",
+            title: "Theme: auto follows your system. Tap to switch.",
+            onclick: move |_| {
+                let next = next.to_string();
+                theme.set(next.clone());
+                let js = match next.as_str() {
+                    "light" | "dark" => format!(
+                        "document.documentElement.dataset.theme = '{next}'; localStorage.setItem('theme', '{next}');"
+                    ),
+                    _ => "delete document.documentElement.dataset.theme; localStorage.setItem('theme', 'auto');".to_string(),
+                };
+                document::eval(&js);
+            },
+            span { class: icon_class }
+            span { "{label}" }
+        }
+    }
 }
 
 #[component]
@@ -760,11 +1130,6 @@ pub fn Hero() -> Element {
                         h1 { "Cobalt Installer" }
                         p { class: "app_tagline", "Mods for Fire Emblem Engage" }
                     }
-                    a {
-                        class: "header_help",
-                        href: "https://discord.gg/BH6XhKsKdS",
-                        "Need help?"
-                    }
                 }
             }
             div { id: "main-container",
@@ -786,15 +1151,15 @@ pub fn Hero() -> Element {
     }
 }
 
-// Desktop body: two tabs, the Cobalt installer and the mod browser. The installer stays reachable
-// so the user can update Cobalt anytime, and the Mods tab stays locked until Cobalt is installed.
-#[cfg(feature = "desktop")]
+// The tabs: the Cobalt installer, plus the mod browser + My Mods (both locked until Cobalt is
+// installed). Shared by the desktop and Android bodies. Storybook is a desktop debug-only extra.
+#[cfg(any(feature = "desktop", target_os = "android"))]
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Install,
     Browse,
     MyMods,
-    #[cfg(debug_assertions)]
+    #[cfg(all(feature = "desktop", debug_assertions))]
     Storybook,
 }
 
@@ -883,7 +1248,7 @@ fn Body(status_message: Signal<String>) -> Element {
             }
             let link = url.as_str().to_string();
             let apikey = nexus_apikey().trim().to_string();
-            let sd = resolve_sd_root(&installation_type(), &user_selected_sdcard_path());
+            let sd = resolve_store(&installation_type(), &user_selected_sdcard_path());
             if apikey.is_empty() {
                 nxm_status.set(Some("Connect your NexusMods account first (Mods tab → NexusMods).".to_string()));
                 continue;
@@ -1000,7 +1365,7 @@ fn Body(status_message: Signal<String>) -> Element {
                         },
                         Tab::Browse => rsx! {
                             if let Some(root) = sd_root.clone() {
-                                mods_ui::ModBrowser { sd_root: root }
+                                mods_ui::ModBrowser { store: storage::ModStore::new(&root) }
                             } else {
                                 div { class: "mod_message", "Pick an install target on the Install tab first." }
                             }
@@ -1008,7 +1373,7 @@ fn Body(status_message: Signal<String>) -> Element {
                         Tab::MyMods => rsx! {
                             if let Some(root) = sd_root.clone() {
                                 // "View" opens the GameBanana detail panel inside My Mods itself.
-                                installed_ui::MyMods { sd_root: root }
+                                installed_ui::MyMods { store: storage::ModStore::new(&root) }
                             } else {
                                 div { class: "mod_message", "Pick an install target on the Install tab first." }
                             }
@@ -1078,7 +1443,7 @@ fn Onboarding(
                 div { class: "onboard_card wide",
                     if let Some(root) = sd_root.clone() {
                         starter_ui::StarterPack {
-                            sd_root: root,
+                            store: storage::ModStore::new(&root),
                             on_close: move |_| onboarded.set(true),
                         }
                     } else {
@@ -1218,6 +1583,25 @@ fn Body(status_message: Signal<String>) -> Element {
         }
     });
 
+    // Background install manager, same as desktop: a shared list + a coroutine (living here in Body,
+    // so it outlives any modal) that runs installs against the SAF-backed ModStore.
+    let downloads = use_context_provider(|| Signal::new(Vec::<downloads::ActiveDownload>::new()));
+    use_coroutine(move |rx| downloads::run_installer(downloads, rx));
+    let downloads_busy = use_memo(move || downloads::is_busy(&downloads()));
+
+    let mut active_tab = use_signal(|| Tab::Install);
+    // Browse / My Mods unlock once the folder is granted and Cobalt is installed there. Those are
+    // one-shot SAF checks, not reactive, so reading the install status here subscribes Body to it:
+    // when installing Cobalt flips the status to "complete", Body re-renders and the checks re-run.
+    let store = storage::ModStore::new();
+    let _ = status_message();
+    let ready = saf::persisted_tree_uri().is_some() && saf::cobalt_installed();
+    use_effect(move || {
+        if active_tab() != Tab::Install && !ready {
+            active_tab.set(Tab::Install);
+        }
+    });
+
     rsx! {
         if let Some((tag, url)) = update() {
             div { class: "nxm_banner update_banner",
@@ -1233,7 +1617,37 @@ fn Body(status_message: Signal<String>) -> Element {
                 button { class: "close", onclick: move |_| update.set(None), "×" }
             }
         }
-        Controls { status_message }
+
+        div { class: "android_tabbar",
+            button {
+                class: if active_tab() == Tab::Install { "android_tab active" } else { "android_tab" },
+                onclick: move |_| active_tab.set(Tab::Install),
+                "Install"
+            }
+            button {
+                class: if active_tab() == Tab::Browse { "android_tab active" } else { "android_tab" },
+                disabled: !ready,
+                onclick: move |_| active_tab.set(Tab::Browse),
+                "Browse"
+            }
+            button {
+                class: if active_tab() == Tab::MyMods { "android_tab active" } else { "android_tab" },
+                disabled: !ready,
+                onclick: move |_| active_tab.set(Tab::MyMods),
+                "My Mods"
+                if downloads_busy() {
+                    span { class: "nav_spinner", mods_ui::Spinner {} }
+                }
+            }
+        }
+
+        div { class: "android_tab_content",
+            match active_tab() {
+                Tab::Install => rsx! { Controls { status_message } },
+                Tab::Browse => rsx! { mods_ui::ModBrowser { store: store.clone() } },
+                Tab::MyMods => rsx! { installed_ui::MyMods { store: store.clone() } },
+            }
+        }
     }
 }
 

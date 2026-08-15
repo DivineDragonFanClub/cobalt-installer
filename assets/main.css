@@ -2470,3 +2470,49 @@ button.danger_outline:hover:enabled {
     border-color: var(--danger);
     color: light-dark(#8f2a23, #ffc9c4);
 }
+
+/* ---- Android tab bar ------------------------------------------------------ */
+/* Phone layout: a simple top tab row instead of the desktop sidebar. */
+.android_tabbar {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+}
+.android_tab {
+    flex: 1;
+    padding: 10px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.android_tab.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+.android_tab:disabled {
+    color: var(--faint);
+    opacity: 0.6;
+}
+.android_tab_content {
+    padding: 12px 12px 24px;
+}
+
+/* Controller focus ring for the Android gamepad navigation layer (see GAMEPAD_NAV_JS). */
+.gp_focus {
+    outline: 3px solid var(--accent) !important;
+    outline-offset: 2px;
+    border-radius: 8px;
+}

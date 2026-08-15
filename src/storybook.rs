@@ -75,7 +75,7 @@ fn ModalStory(hold_loading: bool) -> Element {
             ModDetailPanel {
                 mod_id: 702_023,
                 // A scratch dir: a stray Install click extracts somewhere harmless.
-                sd_root: std::env::temp_dir().join("cobalt_storybook"),
+                store: crate::storage::ModStore::new(&std::env::temp_dir().join("cobalt_storybook")),
                 installed,
                 on_close: move |_| open.set(false),
                 fixture: (!hold_loading).then(fixture_detail),

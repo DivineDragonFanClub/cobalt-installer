@@ -9,7 +9,7 @@
 // picks it for the batch: tick the mods you want (all ticked by default) and hit "Install selected".
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use crate::storage::ModStore;
 
 use dioxus::prelude::*;
 
@@ -29,7 +29,7 @@ enum ItemState {
 // Download + install one starter mod. Fetches the mod's page, picks its newest file, and unzips it
 // into engage/mods. Progress shows on the button (these are small), so we ignore download bytes.
 async fn install_one(
-    sd: PathBuf,
+    store: ModStore,
     id: u64,
     mut statuses: Signal<HashMap<u64, ItemState>>,
     mut installed: Signal<HashSet<u64>>,
@@ -48,11 +48,11 @@ async fn install_one(
     };
     // One transactional install: the mod plus any FE Engage GameBanana mods it requires, all-or-
     // nothing. The starter pack shows a single spinner, so we don't need the per-step phases here.
-    match crate::downloads::install_transactional(&sd, &detail, &file, |_| {}).await {
+    match crate::downloads::install_transactional(&store, &detail, &file, |_| {}).await {
         Ok(()) => {
             statuses.write().insert(id, ItemState::Done);
             // Re-scan so any required mods installed alongside also show as installed.
-            installed.set(install::installed_gamebanana_ids(&sd).into_keys().collect());
+            installed.set(install::installed_gamebanana_ids(&store).into_keys().collect());
         }
         Err(_) => {
             statuses.write().insert(id, ItemState::Failed);
@@ -61,7 +61,7 @@ async fn install_one(
 }
 
 #[component]
-pub fn StarterPack(sd_root: PathBuf, on_close: EventHandler<()>) -> Element {
+pub fn StarterPack(store: ModStore, on_close: EventHandler<()>) -> Element {
     // The collection's mods, fetched once.
     let pack = use_resource(|| async {
         gamebanana::collection_items(gamebanana::STARTER_COLLECTION, 1).await
@@ -69,7 +69,7 @@ pub fn StarterPack(sd_root: PathBuf, on_close: EventHandler<()>) -> Element {
 
     // Which of these are already in engage/mods, so we don't offer them and can badge them. Grows as
     // installs finish.
-    let installed_root = sd_root.clone();
+    let installed_root = store.clone();
     let installed = use_signal(move || {
         install::installed_gamebanana_ids(&installed_root)
             .into_keys()
@@ -160,7 +160,7 @@ pub fn StarterPack(sd_root: PathBuf, on_close: EventHandler<()>) -> Element {
                                     class: "engage",
                                     disabled: to_install.is_empty() || installing(),
                                     onclick: {
-                                        let sd = sd_root.clone();
+                                        let sd = store.clone();
                                         let ids = to_install.clone();
                                         move |_| {
                                             let sd = sd.clone();
@@ -206,7 +206,7 @@ pub fn StarterPack(sd_root: PathBuf, on_close: EventHandler<()>) -> Element {
             crate::mods_ui::ModDetailPanel {
                 key: "{id}",
                 mod_id: id,
-                sd_root: sd_root.clone(),
+                store: store.clone(),
                 installed,
                 on_close: move |_| detail_open.set(None),
                 // Installing in the pack is driven by the row checkboxes, so keep the modal read-only.

@@ -154,6 +154,14 @@ pub fn MyMods(sd_root: PathBuf) -> Element {
                                 },
                                 "Copy mod list"
                             }
+                            button {
+                                class: "menu_item",
+                                onclick: move |_| {
+                                    tools_open.set(false);
+                                    show_starter.set(true);
+                                },
+                                "Browse starter pack"
+                            }
                         }
                     }
                 }

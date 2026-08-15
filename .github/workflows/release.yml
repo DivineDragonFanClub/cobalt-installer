@@ -21,14 +21,55 @@ permissions:
   contents: write
 
 jobs:
+  # Keep the checked-in Cargo.toml version in step with the tag being released. If they differ, bump
+  # Cargo.toml + Cargo.lock and push that commit back to the branch, so the source always reflects
+  # what shipped. The build jobs check out this commit. GITHUB_TOKEN pushes don't re-trigger
+  # workflows, so this can't loop.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump version to match tag
+        id: bump
+        run: |
+          set -euo pipefail
+          ver="${{ inputs.tag }}"; ver="${ver#v}"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          current=$(grep -m1 -E '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
+          echo "Tag version: $ver, Cargo.toml version: $current"
+          if [ "$current" = "$ver" ]; then
+            echo "Already in sync, nothing to commit"
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sed -i -E "s/^version = \".*\"/version = \"$ver\"/" Cargo.toml
+          # bump our own package entry in the lockfile too (the version line right after its name),
+          # so the first cargo run in the build jobs doesn't have to rewrite Cargo.lock
+          awk -v v="$ver" '
+            /^name = "CobaltInstaller"$/ { print; getline; sub(/^version = ".*"/, "version = \"" v "\""); print; next }
+            { print }
+          ' Cargo.lock > Cargo.lock.tmp && mv Cargo.lock.tmp Cargo.lock
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump version to $ver"
+          git push origin "HEAD:${{ github.ref_name }}"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: version
     runs-on: windows-latest
     # .cargo/config.toml sets a nightly-only `-Z threads=8` rustflag for the windows
     # target. This lets the stable CI toolchain accept it without changing the repo.
     env:
       RUSTC_BOOTSTRAP: "1"
     steps:
+      # check out the version-bump commit so Cargo.toml already carries the tag's version
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -36,14 +77,6 @@ jobs:
       - run: cargo binstall -y --force dioxus-cli@0.7.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Stamp version from tag
-        shell: pwsh
-        run: |
-          $ver = "${{ inputs.tag }}" -replace '^v',''
-          (Get-Content Cargo.toml) -replace '^version = ".*"', "version = ""$ver""" | Set-Content Cargo.toml
-          Write-Host "Building version $ver"
-          Select-String -Path Cargo.toml -Pattern '^version' | Select-Object -First 1
 
       # release-hub's Windows updater runs the downloaded asset as an .exe with elevation (ShellExecute
       # runas), so the self-update asset is an NSIS installer (.exe), not an MSI (which would need
@@ -90,6 +123,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
+          # point the tag at the version-bump commit so the release matches the shipped version
+          target_commitish: ${{ needs.version.outputs.sha }}
           prerelease: ${{ inputs.prerelease }}
           files: |
             out/*.exe
@@ -98,9 +133,13 @@ jobs:
           fail_on_unmatched_files: false
 
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
+      # check out the version-bump commit so Cargo.toml already carries the tag's version
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -114,13 +153,6 @@ jobs:
           cargo binstall -y --force --targets aarch64-apple-darwin dioxus-cli@0.7.9
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/dx" --version
-
-      - name: Stamp version from tag
-        run: |
-          ver="${{ inputs.tag }}"; ver="${ver#v}"
-          sed -i '' -E "s/^version = \".*\"/version = \"$ver\"/" Cargo.toml
-          echo "Building version $ver"
-          grep -m1 '^version' Cargo.toml
 
       - name: Bundle both arches
         run: |
@@ -244,6 +276,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
+          # point the tag at the version-bump commit so the release matches the shipped version
+          target_commitish: ${{ needs.version.outputs.sha }}
           prerelease: ${{ inputs.prerelease }}
           files: |
             out/*.app.zip
@@ -252,9 +286,13 @@ jobs:
           fail_on_unmatched_files: false
 
   android:
+    needs: version
     runs-on: ubuntu-latest
     steps:
+      # check out the version-bump commit so Cargo.toml already carries the tag's version
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
@@ -283,13 +321,6 @@ jobs:
           cargo binstall -y --force dioxus-cli@0.7.9
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Stamp version from tag
-        run: |
-          ver="${{ inputs.tag }}"; ver="${ver#v}"
-          sed -i -E "s/^version = \".*\"/version = \"$ver\"/" Cargo.toml
-          echo "Building version $ver"
-          grep -m1 '^version' Cargo.toml
-
       # android/build.sh does `dx build --release`, overlays the SAMMIE launcher icon (dx
       # has no config for it), and runs assembleRelease with minify off, signed with the
       # debug key. See the script for why. Produces a ~8MB release APK.
@@ -306,6 +337,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
+          # point the tag at the version-bump commit so the release matches the shipped version
+          target_commitish: ${{ needs.version.outputs.sha }}
           prerelease: ${{ inputs.prerelease }}
           files: out/*.apk
           fail_on_unmatched_files: true

@@ -20,7 +20,7 @@ const GRAPHQL_URL: &str = "https://api.nexusmods.com/v2/graphql";
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .user_agent(concat!("CobaltInstaller/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("CobaltManager/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("failed to build reqwest client")
@@ -39,7 +39,7 @@ pub enum Auth {
 fn get(path: &str, auth: &Auth) -> reqwest::RequestBuilder {
     let builder = CLIENT
         .get(format!("{API_BASE}{path}"))
-        .header("Application-Name", "CobaltInstaller")
+        .header("Application-Name", "CobaltManager")
         .header("Application-Version", env!("CARGO_PKG_VERSION"))
         .header("Accept", "application/json");
     match auth {

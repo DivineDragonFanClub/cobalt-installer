@@ -10,7 +10,7 @@
 use release_hub::{Config, GitHubSource, Update, Updater, UpdaterBuilder};
 
 const REPO_OWNER: &str = "DivineDragonFanClub";
-const REPO_NAME: &str = "cobalt-installer";
+const REPO_NAME: &str = "cobalt-manager";
 
 // The public half of the minisign keypair the release assets are signed with (the private key lives
 // in CI as MINISIGN_SECRET_KEY). release-hub verifies each downloaded asset against this before
@@ -46,4 +46,52 @@ pub async fn install_and_relaunch(update: Update, on_bytes: impl FnMut(usize)) -
     update.download_and_install(on_bytes).await?;
     build_updater()?.relaunch()?;
     Ok(())
+}
+
+// One-time cleanup of the old, differently-named Windows install.
+//
+// We used to ship as "Cobalt Installer". The rebrand to "Cobalt Manager" changes the NSIS product
+// name, so when an old build self-updates, the new installer lands in a fresh folder and leaves the
+// old "Cobalt Installer" behind in Add/Remove Programs. The old build's updater code is frozen and
+// can't clean up after itself, so the new build does it on launch instead: find the leftover entry
+// and run its silent uninstaller. Once it's gone this finds nothing and does nothing, so it's safe
+// to call on every startup. Best-effort, any failure is ignored (a stray old entry is harmless).
+#[cfg(target_os = "windows")]
+pub fn cleanup_previous_install() {
+    use std::process::Command;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    const OLD_DISPLAY_NAME: &str = "Cobalt Installer";
+    const UNINSTALL_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+
+    // NSIS per-user installs register under HKCU, per-machine under HKLM. Check both.
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let Ok(uninstall) = RegKey::predef(root).open_subkey(UNINSTALL_PATH) else {
+            continue;
+        };
+        for name in uninstall.enum_keys().flatten() {
+            let Ok(entry) = uninstall.open_subkey(&name) else {
+                continue;
+            };
+            let display: String = entry.get_value("DisplayName").unwrap_or_default();
+            if display != OLD_DISPLAY_NAME {
+                continue;
+            }
+            // Prefer the ready-made silent form, else take the plain uninstall path and add NSIS's
+            // silent switch ourselves. Run it through cmd so the quoted path + args parse for us.
+            let cmd: Option<String> = entry
+                .get_value("QuietUninstallString")
+                .ok()
+                .or_else(|| {
+                    entry
+                        .get_value::<String, _>("UninstallString")
+                        .ok()
+                        .map(|s| format!("{s} /S"))
+                });
+            if let Some(cmd) = cmd {
+                let _ = Command::new("cmd").args(["/C", &cmd]).spawn();
+            }
+        }
+    }
 }

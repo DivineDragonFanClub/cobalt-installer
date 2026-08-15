@@ -1,7 +1,7 @@
 [application]
 
 # App (Project) Name
-name = "Cobalt Installer"
+name = "Cobalt Manager"
 default_platform = "desktop"
 
 # Android: we only override MainActivity (it owns the folder picker and the SAF
@@ -26,7 +26,7 @@ schemes = ["nxm"]
 [web.app]
 
 # HTML title tag content
-title = "Cobalt Installer"
+title = "Cobalt Manager"
 
 # include `assets` in web platform
 [web.resource]

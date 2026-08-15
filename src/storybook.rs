@@ -151,7 +151,7 @@ fn BannerStory() -> Element {
     rsx! {
         div { class: "sb_rows",
             div { class: "nxm_banner update_banner",
-                span { "Cobalt Installer 9.9.9 is available." }
+                span { "Cobalt Manager 9.9.9 is available." }
                 button { class: "primary", "Update & restart" }
                 button { class: "close", {icons::x(15)} }
             }

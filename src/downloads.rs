@@ -11,13 +11,13 @@
 // never ends up with a half-installed mod or its dependencies without the mod itself.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::gamebanana::{self, ModDetail, ModFile};
 use crate::install;
+use crate::storage::ModStore;
 
 // Where a given install is in its lifecycle. Finished installs are removed from the list (the My
 // Mods scan then shows the real mod), so there's no Done here; only in-flight and failed states.
@@ -43,7 +43,7 @@ pub struct ActiveDownload {
 pub struct InstallRequest {
     pub detail: ModDetail,
     pub file: ModFile,
-    pub sd_root: PathBuf,
+    pub store: ModStore,
 }
 
 // The shared list, handed around by context.
@@ -69,13 +69,13 @@ pub fn is_busy(list: &[ActiveDownload]) -> bool {
 // call added are removed again so it's all-or-nothing. Progress is reported through on_phase. On
 // failure returns Err with a message (and has already rolled back).
 pub async fn install_transactional(
-    sd_root: &Path,
+    store: &ModStore,
     detail: &ModDetail,
     file: &ModFile,
     mut on_phase: impl FnMut(Phase),
 ) -> Result<(), String> {
     // What's already there, so we skip re-installing it and never roll a pre-existing mod back.
-    let already: HashSet<u64> = install::installed_gamebanana_ids(sd_root).into_keys().collect();
+    let already: HashSet<u64> = install::installed_gamebanana_ids(store).into_keys().collect();
 
     // 1. Work out the required Engage mods (details + files). Downloads nothing yet.
     on_phase(Phase::Working { what: "Checking requirements…".into() });
@@ -110,17 +110,17 @@ pub async fn install_transactional(
     on_phase(Phase::Working { what: "Installing…".into() });
     let mut added: Vec<u64> = Vec::new();
     for (d, bytes, thumb) in &blobs {
-        match install::install_gamebanana_mod(sd_root, d, bytes) {
-            Ok(dest) => {
+        match install::install_gamebanana_mod(store, d, bytes) {
+            Ok(folder) => {
                 added.push(d.id);
                 if let Some((tb, ext)) = thumb {
-                    install::write_thumbnail(&dest, tb, ext);
+                    install::write_thumbnail(store, &folder, tb, ext);
                 }
             }
             Err(e) => {
                 for id in &added {
                     if !already.contains(id) {
-                        install::uninstall_gamebanana_mod(sd_root, *id);
+                        install::uninstall_gamebanana_mod(store, *id);
                     }
                 }
                 return Err(format!("Install failed: {e}"));
@@ -154,7 +154,7 @@ pub async fn run_installer(list: Downloads, mut rx: UnboundedReceiver<InstallReq
 }
 
 async fn process(mut list: Downloads, req: InstallRequest) {
-    let InstallRequest { detail, file, sd_root } = req;
+    let InstallRequest { detail, file, store } = req;
     let id = detail.id;
 
     // Replace any earlier attempt for this mod, then start fresh.
@@ -166,7 +166,7 @@ async fn process(mut list: Downloads, req: InstallRequest) {
         phase: Phase::Working { what: "Preparing…".into() },
     });
 
-    match install_transactional(&sd_root, &detail, &file, |phase| set_phase(list, id, phase)).await {
+    match install_transactional(&store, &detail, &file, |phase| set_phase(list, id, phase)).await {
         // Done: drop the entry so the My Mods scan shows the finished mod instead.
         Ok(()) => remove(list, id),
         Err(e) => set_phase(list, id, Phase::Error(e)),

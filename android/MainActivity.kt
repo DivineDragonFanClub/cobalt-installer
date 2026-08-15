@@ -144,6 +144,102 @@ class MainActivity : WryActivity() {
         }
     }
 
+    // --- mod-storage verbs (called from Rust via the `saf` module / ModStore) ---
+    // All `rel` paths are logical, engage/mods-relative ("MyMod/config.yaml"); we remap each onto
+    // Eden's layout (sdmc/...) the same way installZip does, so the Rust side never sees SAF details.
+
+    // saf::list_dir -> "(Ljava/lang/String;)Ljava/lang/String;"
+    // The children of a folder as a JSON array [{"name","isDir","modified"}]. "[]" on any failure —
+    // notably Eden's provider historically threw on enumerating children, so this must fail soft.
+    fun listDir(rel: String): String {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return "[]"
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        val parentDocId = "$rootId/${remap(rel)}"
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+        val sb = StringBuilder("[")
+        return try {
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null, null, null
+            )?.use { c ->
+                var first = true
+                while (c.moveToNext()) {
+                    val name = c.getString(0) ?: continue
+                    val mime = c.getString(1) ?: ""
+                    val modified = if (c.isNull(2)) 0L else c.getLong(2)
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    if (!first) sb.append(",")
+                    first = false
+                    sb.append("{\"name\":\"").append(jsonEscape(name)).append("\",")
+                        .append("\"isDir\":").append(isDir).append(",")
+                        .append("\"modified\":").append(modified).append("}")
+                }
+                sb.append("]")
+                sb.toString()
+            } ?: "[]"
+        } catch (e: Exception) {
+            Log.w(TAG, "listDir('$rel') failed (provider can't enumerate?)", e)
+            "[]"
+        }
+    }
+
+    // saf::read_file -> "(Ljava/lang/String;)[B", null when the file isn't there.
+    fun readFile(rel: String): ByteArray? {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return null
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        return try {
+            contentResolver.openInputStream(docUriFor(treeUri, rootId, rel))?.use { it.readBytes() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // saf::write_mod_file -> "(Ljava/lang/String;[B)Z"
+    fun writeModFile(rel: String, bytes: ByteArray): Boolean {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return false
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        return try {
+            writeFile(treeUri, rootId, remap(rel), bytes.inputStream())
+        } catch (e: Exception) {
+            Log.e(TAG, "writeModFile('$rel') failed", e)
+            false
+        }
+    }
+
+    // saf::delete_path -> "(Ljava/lang/String;)Z", a file or folder (recursively).
+    fun deletePath(rel: String): Boolean {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return false
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        return try {
+            DocumentsContract.deleteDocument(contentResolver, docUriFor(treeUri, rootId, rel))
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // saf::path_exists -> "(Ljava/lang/String;)Z"
+    fun pathExists(rel: String): Boolean {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return false
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        return docExists(docUriFor(treeUri, rootId, rel))
+    }
+
+    // saf::cobalt_installed -> "()Z". The loader lands at load/<TID>/Cobalt/exefs/ (see remap), so
+    // its subsdk9/main.npdm being present is the marker that Cobalt is installed.
+    fun cobaltInstalled(): Boolean {
+        val treeUri = getPersistedTreeUri()?.let { Uri.parse(it) } ?: return false
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri).trimEnd('/')
+        val base = "$rootId/load/0100A6301214E000/Cobalt/exefs"
+        val sub = DocumentsContract.buildDocumentUriUsingTree(treeUri, "$base/subsdk9")
+        val npdm = DocumentsContract.buildDocumentUriUsingTree(treeUri, "$base/main.npdm")
+        return docExists(sub) || docExists(npdm)
+    }
+
     // --- picker result ---
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -167,6 +263,14 @@ class MainActivity : WryActivity() {
     }
 
     // --- helpers (path/doc-id based, we never list children) ---
+
+    // The document URI for a logical engage/mods-relative path, remapped onto Eden's layout.
+    private fun docUriFor(treeUri: Uri, rootId: String, rel: String): Uri =
+        DocumentsContract.buildDocumentUriUsingTree(treeUri, "$rootId/${remap(rel)}")
+
+    // Minimal JSON string escaping for the display names listDir emits.
+    private fun jsonEscape(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"")
 
     // Map a zip entry to where it belongs in Eden's storage.
     private fun remap(name: String): String {

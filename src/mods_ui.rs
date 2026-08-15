@@ -6,7 +6,7 @@
 // file is just the Dioxus components that drive them.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use crate::storage::ModStore;
 
 use dioxus::prelude::*;
 
@@ -25,7 +25,7 @@ enum Source {
 pub(crate) const NEXUS_ENABLED: bool = false;
 
 #[component]
-pub fn ModBrowser(sd_root: PathBuf) -> Element {
+pub fn ModBrowser(store: ModStore) -> Element {
     let mut source = use_signal(|| Source::GameBanana);
 
     rsx! {
@@ -44,14 +44,18 @@ pub fn ModBrowser(sd_root: PathBuf) -> Element {
             }
         }
         match source() {
-            Source::GameBanana => rsx! { GameBananaBrowser { sd_root: sd_root.clone() } },
-            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { sd_root: sd_root.clone() } },
+            Source::GameBanana => rsx! { GameBananaBrowser { store: store.clone() } },
+            // NexusMods is desktop-only for now; the toggle that reaches this is hidden anyway.
+            #[cfg(feature = "desktop")]
+            Source::Nexus => rsx! { crate::nexus_ui::NexusBrowser { store: store.clone() } },
+            #[cfg(not(feature = "desktop"))]
+            Source::Nexus => rsx! {},
         }
     }
 }
 
 #[component]
-fn GameBananaBrowser(sd_root: PathBuf) -> Element {
+fn GameBananaBrowser(store: ModStore) -> Element {
     let mut query = use_signal(String::new);
     let mut category = use_signal(|| None::<u64>);
     let mut sort = use_signal(|| gamebanana::SORTS[0].0.to_string());
@@ -69,7 +73,7 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
     let categories = use_resource(|| async { gamebanana::categories().await });
 
     // Which GameBanana mods are already installed, so we can badge them. Refreshed after changes.
-    let installed_root = sd_root.clone();
+    let installed_root = store.clone();
     let mut installed = use_signal(move || {
         install::installed_gamebanana_ids(&installed_root)
             .into_keys()
@@ -85,7 +89,7 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
         ids.sort();
         ids
     });
-    let rescan_root = sd_root.clone();
+    let rescan_root = store.clone();
     use_effect(move || {
         let _ = active_ids();
         installed.set(install::installed_gamebanana_ids(&rescan_root).into_keys().collect());
@@ -229,7 +233,7 @@ fn GameBananaBrowser(sd_root: PathBuf) -> Element {
             ModDetailPanel {
                 key: "{id}",
                 mod_id: id,
-                sd_root: sd_root.clone(),
+                store: store.clone(),
                 installed,
                 on_close: move |_| selected.set(None),
             }
@@ -323,7 +327,7 @@ pub(crate) fn ModCard(listing: Listing, installed: bool, show_nsfw: bool, on_ope
 #[component]
 pub(crate) fn ModDetailPanel(
     mod_id: u64,
-    sd_root: PathBuf,
+    store: ModStore,
     installed: Signal<HashSet<u64>>,
     on_close: EventHandler<()>,
     // Storybook hooks, defaulted away in production: a preloaded detail instead of the
@@ -430,7 +434,7 @@ pub(crate) fn ModDetailPanel(
                 div { class: "mod_detail_scroll",
                     match &*detail.read() {
                         Some(Ok(d)) => rsx! {
-                            ModDetailContent { detail: d.clone(), sd_root: sd_root.clone(), installed, lightbox, on_close, install_disabled }
+                            ModDetailContent { detail: d.clone(), store: store.clone(), installed, lightbox, on_close, install_disabled }
                         },
                         Some(Err(e)) => rsx! {
                             div { class: "mod_message error", "Couldn't load this mod: {e}" }
@@ -470,7 +474,7 @@ pub(crate) fn DetailSkeleton() -> Element {
 #[component]
 pub(crate) fn ModDetailContent(
     detail: ModDetail,
-    sd_root: PathBuf,
+    store: ModStore,
     mut installed: Signal<HashSet<u64>>,
     mut lightbox: Signal<Option<usize>>,
     on_close: EventHandler<()>,
@@ -571,14 +575,14 @@ pub(crate) fn ModDetailContent(
                                 button {
                                     class: "menu_item",
                                     onclick: {
-                                        let sd = sd_root.clone();
+                                        let sd = store.clone();
                                         let id = detail.id;
                                         move |_| {
                                             menu_open.set(false);
                                             // Looked up at click time: the folder is wherever the
                                             // installer last put this mod.
                                             if let Some(dir) = install::installed_gamebanana_ids(&sd).get(&id) {
-                                                let _ = crate::reveal_in_file_browser(dir);
+                                                let _ = crate::reveal_in_file_browser(sd.path_of(dir));
                                             }
                                         }
                                     },
@@ -590,7 +594,7 @@ pub(crate) fn ModDetailContent(
                                     button {
                                         class: "menu_item danger_item armed",
                                         onclick: {
-                                            let sd = sd_root.clone();
+                                            let sd = store.clone();
                                             let id = detail.id;
                                             move |_| {
                                                 menu_open.set(false);
@@ -713,7 +717,7 @@ pub(crate) fn ModDetailContent(
                     key: "{f.id}",
                     detail: detail.clone(),
                     file: f.clone(),
-                    sd_root: sd_root.clone(),
+                    store: store.clone(),
                     installed,
                     badge: current_badge(&f),
                     install_disabled,
@@ -728,7 +732,7 @@ pub(crate) fn ModDetailContent(
                                 key: "{f.id}",
                                 detail: detail.clone(),
                                 file: f.clone(),
-                                sd_root: sd_root.clone(),
+                                store: store.clone(),
                                 installed,
                                 badge: (!f.version.is_empty()).then(|| f.version.clone()),
                                 muted_badge: true,
@@ -748,7 +752,7 @@ pub(crate) fn ModDetailContent(
 fn InstallRow(
     detail: ModDetail,
     file: ModFile,
-    sd_root: PathBuf,
+    store: ModStore,
     installed: Signal<HashSet<u64>>,
     // Text for the pill next to the filename: the file's version tag, or "Latest".
     #[props(default)] badge: Option<String>,
@@ -769,12 +773,12 @@ fn InstallRow(
     let start = {
         let detail = detail.clone();
         let file = file.clone();
-        let sd_root = sd_root.clone();
+        let store = store.clone();
         move |_| {
             installer.send(crate::downloads::InstallRequest {
                 detail: detail.clone(),
                 file: file.clone(),
-                sd_root: sd_root.clone(),
+                store: store.clone(),
             });
         }
     };

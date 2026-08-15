@@ -31,7 +31,7 @@ jobs:
       version: ${{ steps.bump.outputs.version }}
       sha: ${{ steps.bump.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Bump version to match tag
         id: bump
         run: |
@@ -67,7 +67,7 @@ jobs:
       RUSTC_BOOTSTRAP: "1"
     steps:
       # check out the version-bump commit so Cargo.toml already carries the tag's version
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
@@ -137,7 +137,7 @@ jobs:
     runs-on: macos-latest
     steps:
       # check out the version-bump commit so Cargo.toml already carries the tag's version
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
@@ -290,7 +290,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # check out the version-bump commit so Cargo.toml already carries the tag's version
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable

@@ -19,12 +19,13 @@ publisher = "Divine Dragon Fan Club"
 # Without the .ico the Windows build ships with no icon at all.
 icon = ["assets/SAMMIE.png", "assets/SAMMIE.ico"]
 
-# Install WebView2 silently. dx's default runs the WebView2 bootstrapper with its UI visible, which
+# Install WebView2 silently. dx defaults to running the WebView2 installer with its UI visible, which
 # throws a scary "already installed" dialog on the many machines that already have it (Win11 always,
-# most Win10). Silent mode quietly does nothing when it's present and only installs when it's really
-# missing, which the app needs to render (it's a webview app).
+# most Win10). silent = true makes it quietly do nothing when present and only install when it's
+# really missing (the app needs it to render). Same offline-installer mode dx uses by default, just
+# silenced. This enum is externally tagged, so the shape is { Variant = { ... } }, not a "type" key.
 [bundle.windows]
-webview_install_mode = { type = "DownloadBootstrapper", silent = true }
+webview_install_mode = { OfflineInstaller = { silent = true } }
 
 # Windows installer specifics. dx forces the product name (and so the Start Menu shortcut) to a
 # spaceless PascalCase "CobaltManager", with no config knob to change it. So we point NSIS at a

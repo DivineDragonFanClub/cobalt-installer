@@ -11,7 +11,7 @@
 ;     uninstall / Desktop shortcut names, and the Add/Remove Programs display name)
 ;   - a Components page with an optional Desktop shortcut, ticked by default
 ;   - Start Menu links to the Cobalt wiki (how to use it) and the Lythos wiki (how to make mods)
-;   - an "Open Cobalt Manager" checkbox on the finish page
+;   - a finish page that offers to open the app, the Cobalt wiki, and the Lythos wiki
 ;   - the installer and uninstaller close a running Cobalt Manager first so locked files don't block them
 ; Everything else still uses dx's handlebars placeholders. The install DIRECTORY stays on the
 ; product_name placeholder (CobaltManager) on purpose so the on-disk path has no spaces.
@@ -78,12 +78,19 @@ VIAddVersionKey "LegalCopyright" "{{copyright}}"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 
-; Put an "Open Cobalt Manager" checkbox on the last page so the user can launch right after
-; installing. It's ticked by default. The app inherits the installer's privileges, which is fine
-; for our per-user install (RequestExecutionLevel user). If this ever becomes a per-machine (admin)
-; install, launching from here would run the app as admin, which we'd want to avoid.
+; Finish page. Beyond launching the app, we offer both wikis right here so a first-time user can jump
+; straight to them. MUI gives three slots: the RUN checkbox (launch the app), the SHOWREADME checkbox
+; (pointed at the Cobalt usage wiki, left unticked so we don't force a browser to open), and one
+; hyperlink at the bottom (the Lythos modding wiki). ExecShell on an http URL opens the browser.
 !define MUI_FINISHPAGE_RUN "$INSTDIR\{{main_binary_name}}"
 !define MUI_FINISHPAGE_RUN_TEXT "Open Cobalt Manager"
+; The RUN app inherits the installer's privileges. Fine for our per-user install. If this ever becomes
+; a per-machine (admin) install, launching here would run the app elevated, which we'd want to avoid.
+!define MUI_FINISHPAGE_SHOWREADME "https://github.com/Raytwo/Cobalt/wiki"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Open the Cobalt wiki (how to use it)"
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_LINK "Learn how to make mods (Lythos wiki)"
+!define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/DivineDragonFanClub/Lythos/wiki"
 !insertmacro MUI_PAGE_FINISH
 
 ; Uninstaller pages

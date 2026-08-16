@@ -14,7 +14,25 @@ android_min_sdk_version = 29
 [bundle]
 identifier = "com.divinedragonfanclub"
 publisher = "Divine Dragon Fan Club"
-icon = ["assets/SAMMIE.png"]
+# Windows picks the .ico (exe, Start Menu shortcut, taskbar, Add/Remove), the .png covers
+# macOS/Linux. Both are the same SAMMIE face so the app looks the same on every platform.
+# Without the .ico the Windows build ships with no icon at all.
+icon = ["assets/SAMMIE.png", "assets/SAMMIE.ico"]
+
+# Install WebView2 silently. dx's default runs the WebView2 bootstrapper with its UI visible, which
+# throws a scary "already installed" dialog on the many machines that already have it (Win11 always,
+# most Win10). Silent mode quietly does nothing when it's present and only installs when it's really
+# missing, which the app needs to render (it's a webview app).
+[bundle.windows]
+webview_install_mode = { type = "DownloadBootstrapper", silent = true }
+
+# Windows installer specifics. dx forces the product name (and so the Start Menu shortcut) to a
+# spaceless PascalCase "CobaltManager", with no config knob to change it. So we point NSIS at a
+# forked template that hardcodes the nice spaced "Cobalt Manager" name for the shortcuts + the
+# Add/Remove entry. start_menu_folder makes the Start Menu group match. See windows/installer.nsi.
+[bundle.windows.nsis]
+template = "windows/installer.nsi"
+start_menu_folder = "Cobalt Manager"
 
 # Register the app as the handler for nxm:// links (NexusMods "Mod Manager Download"). dx maps this
 # to CFBundleURLTypes in the macOS Info.plist and an intent-filter on Android. The Rust side catches
